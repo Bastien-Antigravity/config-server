@@ -1,0 +1,85 @@
+package server
+
+import (
+	"fmt"
+	"io"
+
+	"config-server/src/core"
+
+	"github.com/Bastien-Antigravity/safe-socket/src/facade"
+	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"
+
+	"google.golang.org/protobuf/proto"
+)
+
+// -----------------------------------------------------------------------------
+func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
+	defer sock.Close()
+
+	// 1. Extract Client Identity from Handshake
+	hc, ok := sock.(*facade.HandshakeConnection)
+	if !ok || hc.Identity == nil {
+		s.Logger.Error("Connection does not have a Handshake identity")
+		return
+	}
+
+	name, _ := hc.Identity.FromName()
+	address, _ := hc.Identity.FromAddress()
+	clientName := fmt.Sprintf("%s-%s", name, address)
+
+	s.Logger.Info(fmt.Sprintf("Client identified: %s", clientName))
+
+	s.addListener(clientName, sock)
+	defer s.removeListener(clientName)
+
+	// 2. Message Loop
+	// Allocation Optimization: Reuse buffer
+	// Start with 64KB (typical max UDP, reasonable for TCP config messages)
+	buf := make([]byte, 65535)
+
+	for {
+		// Use Read(buf) instead of ReadMessage to reuse buffer
+		n, err := sock.Read(buf)
+		if err != nil {
+			if err == io.ErrShortBuffer {
+				// Buffer too small. Resize double and retry.
+				// Note: FramedTCP uses Peek, so the header is still there. We can safely retry.
+				// Safety check: Limit max size to avoid OOM (e.g. 10MB)
+				if len(buf) >= 10*1024*1024 {
+					s.Logger.Error(fmt.Sprintf("Message too large from %s", clientName))
+					return
+				}
+				newSize := len(buf) * 2
+				s.Logger.Info(fmt.Sprintf("Resizing read buffer for %s to %d bytes", clientName, newSize))
+				buf = make([]byte, newSize)
+				continue
+			}
+
+			if err != io.EOF {
+				s.Logger.Error(fmt.Sprintf("Read error from %s: %v", clientName, err))
+			}
+			return
+		}
+
+		// Handle ConfigMsg
+		// We pass the slice buf[:n]
+		response, err := core.ProcessRequest(buf[:n], s.Store, s.Persistence, s.broadcastUpdate)
+		if err != nil {
+			s.Logger.Error(fmt.Sprintf("Error processing request from %s: %v", clientName, err))
+			return
+		}
+
+		if response != nil {
+			bytes, err := proto.Marshal(response)
+			if err != nil {
+				s.Logger.Error(fmt.Sprintf("Failed to marshal response: %v", err))
+				return
+			}
+
+			if _, err := sock.Write(bytes); err != nil {
+				s.Logger.Error(fmt.Sprintf("Write error to %s: %v", clientName, err))
+				return
+			}
+		}
+	}
+}

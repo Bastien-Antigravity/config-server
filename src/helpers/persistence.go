@@ -1,0 +1,14 @@
+package helpers
+
+import (
+	"config-server/src/store"
+	"log"
+)
+
+// -----------------------------------------------------------------------------
+
+func TryPersist(pm *store.PersistenceManager, s *store.Store) {
+	if err := pm.Save(s.Get()); err != nil {
+		log.Printf("Persistence failed: %v", err)
+	}
+}
