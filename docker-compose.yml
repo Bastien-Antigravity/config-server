@@ -1,0 +1,83 @@
+# Antigravity Platform — Docker Compose
+# Usage: TAG=dev docker compose up -d
+# Secrets: set TELEBOT_TOKEN, TELEBOT_CHAT_ID, DB_USER, DB_PASSWORD as env vars on the machine
+
+services:
+
+  # --- Watchtower (auto-update) ---
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.docker/config.json:/config.json:ro
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_INCLUDE_STOPPED=false
+    command: --label-enable
+
+  # --- Infrastructure ---
+  log-server:
+    image: ghcr.io/bastien-antigravity/log-server:${TAG:-latest}
+    restart: unless-stopped
+    ports: ["9020:9020"]
+    labels: [com.centurylinklabs.watchtower.enable=true]
+
+  config-server:
+    image: ghcr.io/bastien-antigravity/config-server:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [log-server]
+    ports: ["1026:1026"]
+    labels: [com.centurylinklabs.watchtower.enable=true]
+
+  notif-server:
+    image: ghcr.io/bastien-antigravity/notif-server:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [log-server]
+    ports: ["10080:10080"]
+    environment:
+      - TELEBOT_TOKEN
+      - TELEBOT_CHAT_ID
+    labels: [com.centurylinklabs.watchtower.enable=true]
+
+  # --- Data Pipeline ---
+  data-ingestor:
+    image: ghcr.io/bastien-antigravity/data-ingestor:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [config-server, log-server]
+    labels: [com.centurylinklabs.watchtower.enable=true]
+
+  orderbook-aggregator:
+    image: ghcr.io/bastien-antigravity/orderbook-aggregator:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [config-server]
+    labels: [com.centurylinklabs.watchtower.enable=true]
+
+  market-observer:
+    image: ghcr.io/bastien-antigravity/market-observer:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [config-server, log-server]
+    labels: [com.centurylinklabs.watchtower.enable=true]
+
+  technical-analysis:
+    image: ghcr.io/bastien-antigravity/technical-analysis:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [config-server]
+    labels: [com.centurylinklabs.watchtower.enable=true]
+
+  tick-exposer:
+    image: ghcr.io/bastien-antigravity/tick_exposer:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [config-server]
+    labels: [com.centurylinklabs.watchtower.enable=true]
+
+  # --- Frontend ---
+  web:
+    image: ghcr.io/bastien-antigravity/web:${TAG:-latest}
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    environment:
+      - DB_USER
+      - DB_PASSWORD
+    labels: [com.centurylinklabs.watchtower.enable=true]

@@ -5,11 +5,11 @@ import (
 	"sync"
 
 	"config-server/src/helpers"
-	"config-server/src/interfaces"
 	"config-server/src/store"
 
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
 	config "github.com/Bastien-Antigravity/distributed-config/src/schemas"
+	logger_interfaces "github.com/Bastien-Antigravity/flexible-logger/src/interfaces"
 	factory "github.com/Bastien-Antigravity/safe-socket"
 	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"
 
@@ -18,7 +18,7 @@ import (
 
 // Server represents the Config Server.
 type Server struct {
-	Logger        interfaces.Logger
+	Logger        logger_interfaces.Logger
 	Store         *store.Store
 	Persistence   *store.PersistenceManager
 	Config        *distributed_config.Config
@@ -30,7 +30,7 @@ type Server struct {
 // -----------------------------------------------------------------------------
 
 // NewServer creates a new Config Server.
-func NewServer(conf *distributed_config.Config, logger interfaces.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
+func NewServer(conf *distributed_config.Config, logger logger_interfaces.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
 	return &Server{
 		Config:      conf,
 		Logger:      logger,
@@ -51,7 +51,7 @@ func (s *Server) Start() error {
 		os.Exit(1)
 	}
 
-	addr := s.Config.Capabilities.ConfigServer.Port + s.Config.Capabilities.ConfigServer.IP
+	addr := s.Config.Capabilities.ConfigServer.IP + ":" + s.Config.Capabilities.ConfigServer.Port
 
 	// Create a server socket using safe-socket factory
 	// We use "tcp-hello" profile which automatically handles the Handshake

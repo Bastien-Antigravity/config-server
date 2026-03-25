@@ -12,3 +12,5 @@ vendor/
 
 # Test artifacts
 config_store.json
+.DS_Store
+__debug_*

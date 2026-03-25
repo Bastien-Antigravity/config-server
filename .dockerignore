@@ -1,0 +1,35 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+cmd/main/main
+
+# Logs
+*.log
+logs/
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Docs
+README.md
+ARCHITECTURE.md
+doc/
+
+# Test artifacts
+config_store.json
+
+# Debug
+__debug_*

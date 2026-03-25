@@ -3,7 +3,6 @@ module config-server
 go 1.25.3
 
 require (
-	flexible-logger v0.0.0-00010101000000-000000000000
 	github.com/Bastien-Antigravity/distributed-config v0.2.0
 	github.com/Bastien-Antigravity/flexible-logger v0.0.0-20260101101957-fd107662dff0
 	github.com/Bastien-Antigravity/safe-socket v1.3.0
@@ -18,5 +17,3 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace flexible-logger => ./pkg/flexible-logger
