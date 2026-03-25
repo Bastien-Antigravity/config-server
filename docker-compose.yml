@@ -20,18 +20,12 @@ services:
   # --- Infrastructure ---
   log-server:
     image: ghcr.io/bastien-antigravity/log-server:${TAG:-latest}
-    build:
-      context: ../log-server
-      dockerfile: Dockerfile
     restart: unless-stopped
     ports: ["9020:9020"]
     labels: [com.centurylinklabs.watchtower.enable=true]
 
   config-server:
     image: ghcr.io/bastien-antigravity/config-server:${TAG:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on: [log-server]
     ports: ["1026:1026"]
@@ -39,9 +33,6 @@ services:
 
   notif-server:
     image: ghcr.io/bastien-antigravity/notif-server:${TAG:-latest}
-    build:
-      context: ../notif-server
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on: [log-server]
     ports: ["10080:10080"]
@@ -53,45 +44,30 @@ services:
   # --- Data Pipeline ---
   data-ingestor:
     image: ghcr.io/bastien-antigravity/data-ingestor:${TAG:-latest}
-    build:
-      context: ../data-ingestor
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on: [config-server, log-server]
     labels: [com.centurylinklabs.watchtower.enable=true]
 
   orderbook-aggregator:
     image: ghcr.io/bastien-antigravity/orderbook-aggregator:${TAG:-latest}
-    build:
-      context: ../orderbook-aggregator
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on: [config-server]
     labels: [com.centurylinklabs.watchtower.enable=true]
 
   market-observer:
     image: ghcr.io/bastien-antigravity/market-observer:${TAG:-latest}
-    build:
-      context: ../market-observer
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on: [config-server, log-server]
     labels: [com.centurylinklabs.watchtower.enable=true]
 
   technical-analysis:
     image: ghcr.io/bastien-antigravity/technical-analysis:${TAG:-latest}
-    build:
-      context: ../technical-analysis
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on: [config-server]
     labels: [com.centurylinklabs.watchtower.enable=true]
 
   tick-exposer:
     image: ghcr.io/bastien-antigravity/tick_exposer:${TAG:-latest}
-    build:
-      context: ../tick_exposer
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on: [config-server]
     labels: [com.centurylinklabs.watchtower.enable=true]
@@ -99,9 +75,6 @@ services:
   # --- Frontend ---
   web:
     image: ghcr.io/bastien-antigravity/web:${TAG:-latest}
-    build:
-      context: ../web
-      dockerfile: Dockerfile
     restart: unless-stopped
     ports: ["8080:8080"]
     environment:
