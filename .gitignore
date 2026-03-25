@@ -72,3 +72,4 @@ var/
 vendor/
 venv/
 wheels/
+docker-compose.override.yml
