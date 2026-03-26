@@ -66,12 +66,6 @@ services:
     depends_on: [config-server]
     labels: [com.centurylinklabs.watchtower.enable=true]
 
-  tick-exposer:
-    image: ghcr.io/bastien-antigravity/tick_exposer:${TAG:-latest}
-    restart: unless-stopped
-    depends_on: [config-server]
-    labels: [com.centurylinklabs.watchtower.enable=true]
-
   # --- Frontend ---
   web:
     image: ghcr.io/bastien-antigravity/web:${TAG:-latest}

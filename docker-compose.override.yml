@@ -1,0 +1,41 @@
+# Local development override — allows building from source
+services:
+  log-server:
+    build:
+      context: ../log-server
+      dockerfile: Dockerfile
+
+  config-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+  notif-server:
+    build:
+      context: ../notif-server
+      dockerfile: Dockerfile
+
+  data-ingestor:
+    build:
+      context: ../data-ingestor
+      dockerfile: Dockerfile
+
+  orderbook-aggregator:
+    build:
+      context: ../orderbook-aggregator
+      dockerfile: Dockerfile
+
+  market-observer:
+    build:
+      context: ../market-observer
+      dockerfile: Dockerfile
+
+  technical-analysis:
+    build:
+      context: ../technical-analysis
+      dockerfile: Dockerfile
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
