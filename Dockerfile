@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /config-server/config-server ./cmd/main
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /config-server/config-server ./cmd/config-server
 
 # === RUNTIME STAGE ===
 FROM alpine:3.20

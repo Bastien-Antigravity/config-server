@@ -37,7 +37,7 @@ The project is structured into three main layers:
 
 2. Build the server:
    ```bash
-   go build -o server.exe cmd/main/main.go
+   go build -o server.exe cmd/config-server/main.go
    ```
 
 ### Usage
@@ -72,7 +72,7 @@ The server communicates using the **Safe-Socket** `tcp-hello` profile:
 ```
 config-server/
 ├── cmd/
-│   ├── main/           # Application entry point
+│   ├── config-server/  # Application entry point
 │   ├── test/           # Test utilities
 │   └── test_client/    # Simple test client
 ├── src/
