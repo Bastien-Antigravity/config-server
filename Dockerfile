@@ -27,8 +27,5 @@ WORKDIR /config-server
 # Copy the binary from the build stage
 COPY --from=builder /config-server/config-server /config-server/config-server
 
-# Expose port
-EXPOSE 1026
-
 # Set the entrypoint
 ENTRYPOINT ["/config-server/config-server"]
