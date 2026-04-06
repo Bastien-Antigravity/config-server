@@ -1,10 +1,10 @@
 package server
 
 import (
+	"encoding/json"
 	"os"
 	"sync"
 
-	"config-server/src/helpers"
 	"config-server/src/store"
 
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
@@ -46,12 +46,19 @@ func NewServer(conf *distributed_config.Config, logger logger_interfaces.Logger,
 // Start listens for incoming TCP connections.
 func (s *Server) Start() error {
 	// Resolve address from config capabilities
-	if s.Config.Capabilities.ConfigServer == nil || s.Config.Capabilities.ConfigServer.Port == "" || s.Config.Capabilities.ConfigServer.IP == "" {
+	var cs map[string]interface{}
+	if val, ok := s.Config.Capabilities["config_server"]; ok {
+		cs, _ = val.(map[string]interface{})
+	}
+	ip, _ := cs["ip"].(string)
+	port, _ := cs["port"].(string)
+
+	if ip == "" || port == "" {
 		s.Logger.Error("Config for ConfigServer capabilities not found or invalid")
 		os.Exit(1)
 	}
 
-	addr := s.Config.Capabilities.ConfigServer.IP + ":" + s.Config.Capabilities.ConfigServer.Port
+	addr := ip + ":" + port
 
 	// Create a server socket using safe-socket factory
 	// We use "tcp-hello" profile which automatically handles the Handshake
@@ -83,8 +90,9 @@ func (s *Server) Start() error {
 // addListener adds a client to the broadcast list.
 func (s *Server) addListener(name string, sock socket_interfaces.TransportConnection) {
 	s.listenersLock.Lock()
-	defer s.listenersLock.Unlock()
 	s.listeners[name] = sock
+	s.listenersLock.Unlock()
+	go s.broadcastRegistry()
 }
 
 // -----------------------------------------------------------------------------
@@ -92,20 +100,43 @@ func (s *Server) addListener(name string, sock socket_interfaces.TransportConnec
 // removeListener removes a client from the broadcast list.
 func (s *Server) removeListener(name string) {
 	s.listenersLock.Lock()
-	defer s.listenersLock.Unlock()
 	delete(s.listeners, name)
+	s.listenersLock.Unlock()
+	go s.broadcastRegistry()
+}
+
+// -----------------------------------------------------------------------------
+
+// broadcastRegistry sends the list of all connected active clients.
+func (s *Server) broadcastRegistry() {
+	s.listenersLock.RLock()
+	registry := make(map[string][]string)
+	var clients []string
+	for name := range s.listeners {
+		clients = append(clients, name)
+	}
+	s.listenersLock.RUnlock()
+	
+	registry["active_services"] = clients
+	
+	payload, err := json.Marshal(registry)
+	if err != nil {
+		s.Logger.Error("Failed to marshal registry map: " + err.Error())
+		return
+	}
+	s.broadcastUpdate(config.ConfigMsg_BROADCAST_REGISTRY, payload)
 }
 
 // -----------------------------------------------------------------------------
 
 // broadcastUpdate sends configuration updates to all connected clients.
-func (s *Server) broadcastUpdate(msgType config.ConfigMsg_ConfigServerMsg, updates store.ConfigMap) {
+func (s *Server) broadcastUpdate(cmd config.ConfigMsg_Cmd, payload []byte) {
 	s.listenersLock.RLock()
 	defer s.listenersLock.RUnlock()
 
 	msg := &config.ConfigMsg{
-		RespServer:         msgType,
-		SectionsKeysValues: helpers.MapToProto(updates),
+		Command: cmd,
+		Payload: payload,
 	}
 	bytes, err := proto.Marshal(msg)
 	if err != nil {

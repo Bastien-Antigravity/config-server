@@ -5,10 +5,11 @@ Config Server is a lightweight, high-performance configuration management servic
 ## Features
 
 - **Real-Time Updates**: Automatically propagates configuration changes to all connected clients.
+- **Service Registry**: Automatically maps and broadcasts tracking payloads containing all active nodes connected via safe-socket identifiers.
 - **Persistent Storage**: Backed by a human-readable JSON file (default: `config_store.json`).
 - **Atomic Operations**: Uses lock-free atomic pointers for thread-safe, high-concurrency reads.
 - **Reliable Transport**: Built on **[safe-socket](https://github.com/Bastien-Antigravity/safe-socket)** for robust, framed TCP communication with handshake (Identity) support.
-- **Protobuf Messaging**: Uses Protocol Buffers (via `distributed-config`) for structured and efficient communication.
+- **Generic Protobuf Messaging**: Bypasses rigid typed schemas over network sockets by dispatching serialized maps natively.
 - **Standalone Mode**: Can run with local configuration or integrate into a distributed system.
 
 ## Architecture
@@ -62,10 +63,9 @@ The server communicates using the **Safe-Socket** `tcp-hello` profile:
 
 ### Supported Operations
 
-- **Get Config**: Retrieve the current in-memory configuration (`get_mem_config`).
-- **Update Config**: Update specific sections/keys. Triggers a broadcast to all listeners (`update_mem_config`).
-- **Dump Config**: Force a save of the current memory state to disk (`dump_mem_config`).
-- **Subscribe**: Clients can register as listeners (`add_config_listener`) to receive `propagate_mem_config` messages on changes.
+- **Get Config**: Retrieve the current in-memory configuration (`GET_SYNC`).
+- **Update Config**: Update specific sections/keys. Triggers a broadcast to all listeners (`PUT_SYNC`).
+- **Service Registration**: Triggered seamlessly on socket handshake (`BROADCAST_REGISTRY`).
 
 ## Project Structure
 
