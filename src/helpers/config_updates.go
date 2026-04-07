@@ -1,7 +1,7 @@
 package helpers
 
 import (
-	"config-server/src/store"
+	"github.com/Bastien-Antigravity/config-server/src/store"
 )
 
 // -----------------------------------------------------------------------------

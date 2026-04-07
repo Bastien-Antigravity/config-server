@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"config-server/src/core"
+	"github.com/Bastien-Antigravity/config-server/src/core"
 
 	"github.com/Bastien-Antigravity/safe-socket/src/facade"
 	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"

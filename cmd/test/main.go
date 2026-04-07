@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"config-server/src/server"
-	"config-server/src/store"
+	"github.com/Bastien-Antigravity/config-server/src/server"
+	"github.com/Bastien-Antigravity/config-server/src/store"
 
 	"github.com/Bastien-Antigravity/flexible-logger/src/profiles"
 

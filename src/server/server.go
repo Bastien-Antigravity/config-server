@@ -5,7 +5,7 @@ import (
 	"os"
 	"sync"
 
-	"config-server/src/store"
+	"github.com/Bastien-Antigravity/config-server/src/store"
 
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
 	config "github.com/Bastien-Antigravity/distributed-config/src/schemas"
@@ -116,9 +116,9 @@ func (s *Server) broadcastRegistry() {
 		clients = append(clients, name)
 	}
 	s.listenersLock.RUnlock()
-	
+
 	registry["active_services"] = clients
-	
+
 	payload, err := json.Marshal(registry)
 	if err != nil {
 		s.Logger.Error("Failed to marshal registry map: " + err.Error())

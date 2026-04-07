@@ -1,8 +1,9 @@
 package helpers
 
 import (
-	"config-server/src/store"
 	"log"
+
+	"github.com/Bastien-Antigravity/config-server/src/store"
 )
 
 // -----------------------------------------------------------------------------

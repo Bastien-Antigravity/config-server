@@ -1,10 +1,10 @@
-module config-server
+module github.com/Bastien-Antigravity/config-server
 
 go 1.25.3
 
 require (
-	github.com/Bastien-Antigravity/distributed-config v1.0.1
-	github.com/Bastien-Antigravity/flexible-logger v1.0.1
+	github.com/Bastien-Antigravity/distributed-config v1.0.2-0.20260406203028-206e3e9fe409
+	github.com/Bastien-Antigravity/flexible-logger v1.0.2
 	github.com/Bastien-Antigravity/safe-socket v1.0.1
 	google.golang.org/protobuf v1.36.11
 )
