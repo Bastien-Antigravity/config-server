@@ -7,8 +7,6 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/helpers"
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
-	config "github.com/Bastien-Antigravity/distributed-config/src/schemas"
-
 	"google.golang.org/protobuf/proto"
 )
 
