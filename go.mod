@@ -6,6 +6,7 @@ require (
 	github.com/Bastien-Antigravity/distributed-config v1.5.0
 	github.com/Bastien-Antigravity/flexible-logger v1.0.4
 	github.com/Bastien-Antigravity/safe-socket v1.5.0
+	github.com/Bastien-Antigravity/universal-logger v1.0.4
 	google.golang.org/protobuf v1.36.11
 )
 

@@ -7,18 +7,19 @@ import (
 
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
-	distributed_config "github.com/Bastien-Antigravity/distributed-config"
-	config "github.com/Bastien-Antigravity/distributed-config/src/schemas"
-	logger_interfaces "github.com/Bastien-Antigravity/flexible-logger/src/interfaces"
 	factory "github.com/Bastien-Antigravity/safe-socket"
 	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"
 
+	distributed_config "github.com/Bastien-Antigravity/distributed-config"
+	config "github.com/Bastien-Antigravity/distributed-config/src/schemas"
+ 
+	unilog "github.com/Bastien-Antigravity/universal-logger/src/utils"
 	"google.golang.org/protobuf/proto"
 )
 
 // Server represents the Config Server.
 type Server struct {
-	Logger        logger_interfaces.Logger
+	Logger        unilog.Logger
 	Store         *store.Store
 	Persistence   *store.PersistenceManager
 	Config        *distributed_config.Config
@@ -30,7 +31,7 @@ type Server struct {
 // -----------------------------------------------------------------------------
 
 // NewServer creates a new Config Server.
-func NewServer(conf *distributed_config.Config, logger logger_interfaces.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
+func NewServer(conf *distributed_config.Config, logger unilog.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
 	return &Server{
 		Config:      conf,
 		Logger:      logger,

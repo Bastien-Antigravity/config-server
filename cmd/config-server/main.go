@@ -10,9 +10,7 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/server"
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
-	"github.com/Bastien-Antigravity/flexible-logger/src/profiles"
-
-	distributed_config "github.com/Bastien-Antigravity/distributed-config"
+	"github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
 )
 
 func main() {
@@ -20,42 +18,32 @@ func main() {
 	configPath := flag.String("config", "config_store.json", "Path to persistent config file")
 	flag.Parse()
 
-	// 0. Load Distributed Configuration (Standalone)
-	dConf := distributed_config.New("standalone")
-	if dConf == nil {
-		fmt.Println("Critical Error: Failed to load distributed configuration")
-		os.Exit(1)
-	}
+	// 1. Initialize Distributed Configuration and Logger (bootstrap)
+	distConfig, appLogger := bootstrap.Init("ConfigServer", "standalone", "no_lock", "INFO", false)
+	defer appLogger.Close()
 
-	// 1. Create Logger (NoLock Profile)
-	logger := profiles.NewNoLockLogger("ConfigServer", dConf)
-	defer logger.Close()
-
-	logger.Info(fmt.Sprintf("Starting Config Server on port %s...", *port))
+	appLogger.Info(fmt.Sprintf("Starting Config Server on port %s...", *port))
 
 	// 3. Initialize Persistence and Store
-	// Legacy persistence manager mostly for Save I guess, or we can drop it if standalone implies read-only?
-	// User said "standalone mode : Local YAML only".
-	// We keep PM for saving changes if needed, but initial load comes from dConf.
 	pm := store.NewPersistenceManager(*configPath)
 
-	initialConfig := dConf.Config.MemConfig
+	initialConfig := distConfig.MemConfig
 	if initialConfig == nil {
 		initialConfig = make(store.ConfigMap)
 	}
 
-	logger.Info("Configuration loaded from distributed-config (standalone)")
+	appLogger.Info("Configuration loaded from distributed-config (standalone)")
 
 	configStore := store.NewStore()
 	configStore.Replace(initialConfig)
 
 	// 3. Initialize Protocol Server
-	srv := server.NewServer(dConf, logger, configStore, pm)
+	srv := server.NewServer(distConfig, appLogger, configStore, pm)
 
 	// 4. Start Server in Goroutine
 	go func() {
 		if err := srv.Start(); err != nil {
-			logger.Critical(fmt.Sprintf("Server failed: %v", err))
+			appLogger.Critical(fmt.Sprintf("Server failed: %v", err))
 		}
 	}()
 
@@ -64,11 +52,11 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	logger.Info("Shutting down...")
+	appLogger.Info("Shutting down...")
 	// Save state on exit
 	if err := pm.Save(configStore.Get()); err != nil {
-		logger.Error(fmt.Sprintf("Error saving config on shutdown: %v", err))
+		appLogger.Error(fmt.Sprintf("Error saving config on shutdown: %v", err))
 	} else {
-		logger.Info("Config saved.")
+		appLogger.Info("Config saved.")
 	}
 }
