@@ -11,6 +11,7 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
 	"github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
+	"github.com/Bastien-Antigravity/flexible-logger/src/models"
 )
 
 func main() {
@@ -19,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	// 1. Initialize Distributed Configuration and Logger (bootstrap)
-	distConfig, appLogger := bootstrap.Init("ConfigServer", "standalone", "no_lock", "INFO", false)
+	distConfig, appLogger := bootstrap.Init("ConfigServer", "standalone", "no_lock", models.ParseLevel("INFO"), false)
 	defer appLogger.Close()
 
 	appLogger.Info(fmt.Sprintf("Starting Config Server on port %s...", *port))

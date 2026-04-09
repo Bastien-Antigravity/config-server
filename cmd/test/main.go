@@ -13,6 +13,7 @@ import (
 	"github.com/Bastien-Antigravity/flexible-logger/src/profiles"
 
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
+	uniconf "github.com/Bastien-Antigravity/universal-logger/src/config"
 )
 
 func main() {
@@ -47,7 +48,7 @@ func main() {
 	configStore.Replace(initialConfig)
 
 	// 2. Initialize Protocol Server
-	srv := server.NewServer(dConf, logger, configStore, pm)
+	srv := server.NewServer(&uniconf.DistConfig{Config: dConf}, logger, configStore, pm)
 
 	// 3. Start Server in Goroutine
 	go func() {

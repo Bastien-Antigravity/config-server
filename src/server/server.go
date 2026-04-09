@@ -6,32 +6,30 @@ import (
 	"sync"
 
 	"github.com/Bastien-Antigravity/config-server/src/store"
+	"github.com/Bastien-Antigravity/config-server/src/interfaces"
 
 	factory "github.com/Bastien-Antigravity/safe-socket"
 	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"
 
-	distributed_config "github.com/Bastien-Antigravity/distributed-config"
-	config "github.com/Bastien-Antigravity/distributed-config/src/schemas"
+	config "github.com/Bastien-Antigravity/universal-logger/src/config"
+	schemas "github.com/Bastien-Antigravity/distributed-config/src/schemas"
  
-	unilog "github.com/Bastien-Antigravity/universal-logger/src/utils"
 	"google.golang.org/protobuf/proto"
 )
 
 // Server represents the Config Server.
 type Server struct {
-	Logger        unilog.Logger
+	Logger        interfaces.Logger
 	Store         *store.Store
 	Persistence   *store.PersistenceManager
-	Config        *distributed_config.Config
+	Config        *config.DistConfig
 	listeners     map[string]socket_interfaces.TransportConnection
 	listenersLock sync.RWMutex
 	shutdown      chan struct{}
 }
 
-// -----------------------------------------------------------------------------
-
 // NewServer creates a new Config Server.
-func NewServer(conf *distributed_config.Config, logger unilog.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
+func NewServer(conf *config.DistConfig, logger interfaces.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
 	return &Server{
 		Config:      conf,
 		Logger:      logger,
@@ -125,17 +123,17 @@ func (s *Server) broadcastRegistry() {
 		s.Logger.Error("Failed to marshal registry map: " + err.Error())
 		return
 	}
-	s.broadcastUpdate(config.ConfigMsg_BROADCAST_REGISTRY, payload)
+	s.broadcastUpdate(schemas.ConfigMsg_BROADCAST_REGISTRY, payload)
 }
 
 // -----------------------------------------------------------------------------
 
 // broadcastUpdate sends configuration updates to all connected clients.
-func (s *Server) broadcastUpdate(cmd config.ConfigMsg_Cmd, payload []byte) {
+func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 	s.listenersLock.RLock()
 	defer s.listenersLock.RUnlock()
 
-	msg := &config.ConfigMsg{
+	msg := &schemas.ConfigMsg{
 		Command: cmd,
 		Payload: payload,
 	}
