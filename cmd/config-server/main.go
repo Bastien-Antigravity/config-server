@@ -1,17 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
-	"strings"
-	"syscall"
 
 	"github.com/Bastien-Antigravity/config-server/src/server"
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
 	"github.com/Bastien-Antigravity/flexible-logger/src/models"
+	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
+	"github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/lifecycle"
 	"github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
 )
 
@@ -20,14 +20,15 @@ func main() {
 	configPath := flag.String("config", "config_store.json", "Path to persistent config file")
 	flag.Parse()
 
-	// Cleanup environment variables (e.g., if Docker-Compose or Env file adds literal quotes like "9020")
-	os.Setenv("LG_IP", strings.Trim(os.Getenv("LG_IP"), "\""))
-	os.Setenv("LG_PORT", strings.Trim(os.Getenv("LG_PORT"), "\""))
-	os.Setenv("CF_IP", strings.Trim(os.Getenv("CF_IP"), "\""))
-	os.Setenv("CF_PORT", strings.Trim(os.Getenv("CF_PORT"), "\""))
+	// 1. Initialize Toolbox Config (which handles name/IP resolution)
+	appConfig, err := utilconf.LoadConfig("standalone")
+	if err != nil {
+		fmt.Printf("Critical Error loading config: %v\n", err)
+		os.Exit(1)
+	}
 
-	// 1. Initialize Distributed Configuration and Logger (bootstrap)
-	distConfig, appLogger := bootstrap.Init("config-server", "standalone", "no_lock", models.ParseLevel("INFO"), false)
+	// 2. Initialize Logger (bootstrap)
+	_, appLogger := bootstrap.Init("config-server", "standalone", "no_lock", models.ParseLevel("INFO"), false)
 	defer appLogger.Close()
 
 	appLogger.Info(fmt.Sprintf("Starting Config Server on port %s...", *port))
@@ -35,18 +36,18 @@ func main() {
 	// 3. Initialize Persistence and Store
 	pm := store.NewPersistenceManager(*configPath)
 
-	initialConfig := distConfig.MemConfig
+	initialConfig := appConfig.Config.MemConfig
 	if initialConfig == nil {
 		initialConfig = make(store.ConfigMap)
 	}
 
-	appLogger.Info("Configuration loaded from distributed-config (standalone)")
+	appLogger.Info("Configuration loaded via Toolbox (network-aware)")
 
 	configStore := store.NewStore()
 	configStore.Replace(initialConfig)
 
-	// 3. Initialize Protocol Server
-	srv := server.NewServer(distConfig, appLogger, configStore, pm)
+	// 3. Initialize Protocol Server (Now using Toolbox Config)
+	srv := server.NewServer(appConfig, appLogger, configStore, pm)
 
 	// 4. Start Server in Goroutine
 	go func() {
@@ -55,16 +56,12 @@ func main() {
 		}
 	}()
 
-	// 5. Graceful Shutdown
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
+	// 5. Graceful Shutdown via Toolbox
+	lm := lifecycle.NewManager()
+	lm.Register("ConfigPersistence", func() error {
+		appLogger.Info("Saving config state on shutdown...")
+		return pm.Save(configStore.Get())
+	})
 
-	appLogger.Info("Shutting down...")
-	// Save state on exit
-	if err := pm.Save(configStore.Get()); err != nil {
-		appLogger.Error(fmt.Sprintf("Error saving config on shutdown: %v", err))
-	} else {
-		appLogger.Info("Config saved.")
-	}
+	lm.Wait(context.Background())
 }

@@ -12,9 +12,12 @@ require (
 
 require (
 	capnproto.org/go/capnp/v3 v3.1.0-alpha.2 // indirect
+	github.com/Bastien-Antigravity/microservice-toolbox/go v0.0.0-00010101000000-000000000000 // indirect
 	github.com/colega/zeropool v0.0.0-20230505084239-6fb4a4f75381 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/Bastien-Antigravity/microservice-toolbox/go => ../microservice-toolbox/go

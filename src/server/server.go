@@ -2,9 +2,7 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/Bastien-Antigravity/config-server/src/store"
@@ -14,7 +12,7 @@ import (
 	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"
 
 	schemas "github.com/Bastien-Antigravity/distributed-config/src/schemas"
-	config "github.com/Bastien-Antigravity/universal-logger/src/config"
+	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -24,16 +22,16 @@ type Server struct {
 	Logger        interfaces.Logger
 	Store         *store.Store
 	Persistence   *store.PersistenceManager
-	Config        *config.DistConfig
+	AppConfig     *utilconf.AppConfig // Toolbox Config
 	listeners     map[string]socket_interfaces.TransportConnection
 	listenersLock sync.RWMutex
 	shutdown      chan struct{}
 }
 
 // NewServer creates a new Config Server.
-func NewServer(conf *config.DistConfig, logger interfaces.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
+func NewServer(ac *utilconf.AppConfig, logger interfaces.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
 	return &Server{
-		Config:      conf,
+		AppConfig:   ac,
 		Logger:      logger,
 		Store:       s,
 		Persistence: pm,
@@ -46,16 +44,12 @@ func NewServer(conf *config.DistConfig, logger interfaces.Logger, s *store.Store
 
 // Start listens for incoming TCP connections.
 func (s *Server) Start() error {
-	// Resolve address from config capabilities
-	cap, ok := s.Config.Capabilities["config_server"].(map[string]interface{})
-	if !ok || cap["ip"] == nil || cap["port"] == nil {
-		s.Logger.Error("Config for config-server capabilities not found or invalid")
+	// Use Toolbox Smart Resolver for Binding
+	addr, err := s.AppConfig.GetListenAddr("config_server")
+	if err != nil {
+		s.Logger.Error("Failed to resolve bind address: " + err.Error())
 		os.Exit(1)
 	}
-
-	ip := strings.Trim(fmt.Sprintf("%v", cap["ip"]), "\"")
-	port := strings.Trim(fmt.Sprintf("%v", cap["port"]), "\"")
-	addr := fmt.Sprintf("%s:%s", ip, port)
 
 	// Create a server socket using safe-socket factory
 	// We use "tcp-hello" profile which automatically handles the Handshake
