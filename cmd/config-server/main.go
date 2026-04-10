@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 
@@ -16,25 +15,29 @@ import (
 )
 
 func main() {
-	port := flag.String("port", "1026", "Server port") // Default to 1026 per config
-	configPath := flag.String("config", "config_store.json", "Path to persistent config file")
-	flag.Parse()
-
-	// 1. Initialize Toolbox Config (which handles name/IP resolution)
-	appConfig, err := utilconf.LoadConfig("standalone")
+	// 1. Initialize Toolbox Config (handles --port, --host, --name, and --conf automatically)
+	appConfig, err := utilconf.LoadConfig("standalone", nil)
 	if err != nil {
 		fmt.Printf("Critical Error loading config: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Retrieve the resolved port (or from --port CLI)
+	bindAddr, err := appConfig.GetListenAddr("config_server")
+	if err != nil {
+		bindAddr = ":1026" // default
 	}
 
 	// 2. Initialize Logger (bootstrap)
 	_, appLogger := bootstrap.Init("config-server", "standalone", "no_lock", models.ParseLevel("INFO"), false)
 	defer appLogger.Close()
 
-	appLogger.Info(fmt.Sprintf("Starting Config Server on port %s...", *port))
+	appLogger.Info(fmt.Sprintf("Starting Config Server on %s...", bindAddr))
 
 	// 3. Initialize Persistence and Store
-	pm := store.NewPersistenceManager(*configPath)
+	persistenceFile := "config_store.json"
+	// Optional: use a specific flag for this if needed in the future
+	pm := store.NewPersistenceManager(persistenceFile)
 
 	initialConfig := appConfig.Config.MemConfig
 	if initialConfig == nil {

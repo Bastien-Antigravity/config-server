@@ -7,8 +7,6 @@ services:
     image: ghcr.io/bastien-antigravity/config-server:${TAG:-latest}
     container_name: config-server
     restart: unless-stopped
-    ports:
-      - "127.0.0.2:${LG_PORT:-3306}:${LG_PORT:-3306}"
     volumes:
       # If the service needs to read/write config files, mount a volume
       - ./config:/config
