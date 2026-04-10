@@ -21,7 +21,8 @@ func main() {
 	flag.Parse()
 
 	// 1. Initialize Toolbox Config (which handles name/IP resolution)
-	appConfig, err := utilconf.LoadConfig("standalone")
+	// Passing nil for specificFlags lets LoadConfig use the default flag parsing.
+	appConfig, err := utilconf.LoadConfig("standalone", nil)
 	if err != nil {
 		fmt.Printf("Critical Error loading config: %v\n", err)
 		os.Exit(1)
