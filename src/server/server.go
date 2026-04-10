@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 
@@ -45,19 +46,13 @@ func NewServer(conf *config.DistConfig, logger interfaces.Logger, s *store.Store
 // Start listens for incoming TCP connections.
 func (s *Server) Start() error {
 	// Resolve address from config capabilities
-	var cs map[string]interface{}
-	if val, ok := s.Config.Capabilities["config_server"]; ok {
-		cs, _ = val.(map[string]interface{})
-	}
-	ip, _ := cs["ip"].(string)
-	port, _ := cs["port"].(string)
-
-	if ip == "" || port == "" {
+	cap, ok := s.Config.Capabilities["ConfigServer"].(map[string]interface{})
+	if !ok || cap["IP"] == nil || cap["Port"] == nil {
 		s.Logger.Error("Config for ConfigServer capabilities not found or invalid")
 		os.Exit(1)
 	}
 
-	addr := ip + ":" + port
+	addr := fmt.Sprintf("%v:%v", cap["IP"], cap["Port"])
 
 	// Create a server socket using safe-socket factory
 	// We use "tcp-hello" profile which automatically handles the Handshake
