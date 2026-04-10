@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/Bastien-Antigravity/config-server/src/server"
@@ -18,6 +19,10 @@ func main() {
 	port := flag.String("port", "1026", "Server port") // Default to 1026 per config
 	configPath := flag.String("config", "config_store.json", "Path to persistent config file")
 	flag.Parse()
+
+	// Cleanup environment variables (e.g., if Docker-Compose or Env file adds literal quotes like "9020")
+	os.Setenv("LG_IP", strings.Trim(os.Getenv("LG_IP"), "\""))
+	os.Setenv("LG_PORT", strings.Trim(os.Getenv("LG_PORT"), "\""))
 
 	// 1. Initialize Distributed Configuration and Logger (bootstrap)
 	distConfig, appLogger := bootstrap.Init("ConfigServer", "standalone", "no_lock", models.ParseLevel("INFO"), false)
