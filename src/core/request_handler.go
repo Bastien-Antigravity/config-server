@@ -26,7 +26,7 @@ func ProcessRequest(data []byte, s *store.Store, pm *store.PersistenceManager, b
 
 	switch req.Command {
 	case config.ConfigMsg_GET_SYNC:
-		resp.Command = config.ConfigMsg_BROADCAST_SYNC
+		resp.Command = config.ConfigMsg_GET_SYNC
 		payload, _ := json.Marshal(s.Get())
 		resp.Payload = payload
 
