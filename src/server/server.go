@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/Bastien-Antigravity/config-server/src/store"
-	"github.com/Bastien-Antigravity/config-server/src/interfaces"
+	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 
 	factory "github.com/Bastien-Antigravity/safe-socket"
 	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"

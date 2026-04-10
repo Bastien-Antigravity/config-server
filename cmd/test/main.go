@@ -13,6 +13,7 @@ import (
 	"github.com/Bastien-Antigravity/flexible-logger/src/profiles"
 
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
+	"github.com/Bastien-Antigravity/universal-logger/src/logger"
 	uniconf "github.com/Bastien-Antigravity/universal-logger/src/config"
 )
 
@@ -29,7 +30,8 @@ func main() {
 	}
 
 	// 1. Create Logger (NoLock Profile)
-	logger := profiles.NewDevelLogger("TestServer") // Use DevelLogger for tests
+	flexLogger := profiles.NewDevelLogger("TestServer") // Use DevelLogger for tests
+	logger := logger.NewUniLog(flexLogger)
 	defer logger.Close()
 
 	logger.Info(fmt.Sprintf("Starting Config Server on port %s...", *port))
