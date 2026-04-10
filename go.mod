@@ -4,8 +4,8 @@ go 1.25.4
 
 require (
 	github.com/Bastien-Antigravity/distributed-config v1.5.3
-	github.com/Bastien-Antigravity/flexible-logger v1.0.7
-	github.com/Bastien-Antigravity/safe-socket v1.6.0
+	github.com/Bastien-Antigravity/flexible-logger v1.0.9
+	github.com/Bastien-Antigravity/safe-socket v1.7.0
 	github.com/Bastien-Antigravity/universal-logger v1.1.4
 	google.golang.org/protobuf v1.36.11
 )
