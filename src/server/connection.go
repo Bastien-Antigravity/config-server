@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
 
@@ -38,6 +39,10 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	buf := make([]byte, 65535)
 
 	for {
+		// Refresh Deadline to prevent idle timeout (default 5s in safe-socket profiles)
+		// We use 30s as a safe default for configuration client maintenance.
+		_ = sock.SetReadDeadline(time.Now().Add(30 * time.Second))
+
 		// Use Read(buf) instead of ReadMessage to reuse buffer
 		n, err := sock.Read(buf)
 		if err != nil {

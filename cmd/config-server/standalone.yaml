@@ -4,7 +4,7 @@ common:
 capabilities:
     config_server:
         ip: ${CF_IP:127.0.0.2}
-        port: ${CF_PORT:"3306"}
+        port: ${CF_PORT:3306}
         refresh: "300"
     file_system:
         data_path: ./fs_data
@@ -14,10 +14,10 @@ capabilities:
         port: "8888"
     log_server:
         ip: ${LS_IP:127.0.0.2}
-        port: ${LS_PORT:"9020"}
+        port: ${LS_PORT:9020}
     notif_server:
         ip: ${NT_IP:127.0.0.2}
-        port: ${NT_PORT:"1026"}
+        port: ${NT_PORT:1026}
     scheduler:
         ip: 127.0.0.2
         port: "5001"
