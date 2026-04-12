@@ -9,10 +9,10 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/server"
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
-	"github.com/Bastien-Antigravity/flexible-logger/src/models"
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 	"github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/lifecycle"
 	"github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
+	"github.com/Bastien-Antigravity/universal-logger/src/utils"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 	}
 
 	// 2. Initialize Logger (bootstrap)
-	_, appLogger := bootstrap.Init("config-server", "standalone", "no_lock", models.ParseLevel("INFO"), false)
+	_, appLogger := bootstrap.Init("config-server", "standalone", "no_lock", utils.GetLogLevel("INFO"), false)
 	defer appLogger.Close()
 
 	appLogger.Info(fmt.Sprintf("Starting Config Server on port %s...", *port))
