@@ -7,7 +7,7 @@ require (
 	github.com/Bastien-Antigravity/flexible-logger v1.1.5
 	github.com/Bastien-Antigravity/microservice-toolbox/go v1.1.1
 	github.com/Bastien-Antigravity/safe-socket v1.7.3
-	github.com/Bastien-Antigravity/universal-logger v1.1.13
+	github.com/Bastien-Antigravity/universal-logger v1.1.14
 	google.golang.org/protobuf v1.36.11
 )
 
