@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 
@@ -16,13 +15,9 @@ import (
 )
 
 func main() {
-	port := flag.String("port", "1026", "Server port") // Default to 1026 per config
-	configPath := flag.String("config", "config_store.json", "Path to persistent config file")
-	flag.Parse()
-
 	// 1. Initialize Toolbox Config (which handles name/IP resolution)
 	// Passing nil for specificFlags lets LoadConfig use the default flag parsing.
-	appConfig, err := utilconf.LoadConfigWithLogger("standalone", nil, nil)
+	appConfig, err := utilconf.LoadConfig("standalone", nil)
 	if err != nil {
 		fmt.Printf("Critical Error loading config: %v\n", err)
 		os.Exit(1)
@@ -35,10 +30,11 @@ func main() {
 	// Inject logger into Config for toolbox internal logs
 	appConfig.Logger = appLogger
 
-	appLogger.Info("Starting Config Server on port %s...", *port)
+	addr, _ := appConfig.GetListenAddr("config_server")
+	appLogger.Info("Starting Config Server on %s...", addr)
 
 	// 3. Initialize Persistence and Store
-	pm := store.NewPersistenceManager(*configPath)
+	pm := store.NewPersistenceManager("config_store.json")
 
 	initialConfig := appConfig.Config.MemConfig
 	if initialConfig == nil {
@@ -50,17 +46,17 @@ func main() {
 	configStore := store.NewStore()
 	configStore.Replace(initialConfig)
 
-	// 3. Initialize Protocol Server (Now using Toolbox Config)
+	// 4. Initialize Protocol Server (Now using Toolbox Config)
 	srv := server.NewServer(appConfig, appLogger, configStore, pm)
 
-	// 4. Start Server in Goroutine
+	// 5. Start Server in Goroutine
 	go func() {
 		if err := srv.Start(); err != nil {
 			appLogger.Critical("Server failed: %v", err)
 		}
 	}()
 
-	// 5. Graceful Shutdown via Toolbox
+	// 6. Graceful Shutdown via Toolbox
 	lm := lifecycle.NewManagerWithLogger(appLogger)
 	lm.Register("ConfigPersistence", func() error {
 		appLogger.Info("Saving config state on shutdown...")

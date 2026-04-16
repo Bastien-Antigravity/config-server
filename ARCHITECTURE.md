@@ -1,3 +1,12 @@
+---
+microservice: config-server
+type: architecture
+status: active
+tags:
+  - domain/configuration
+  - domain/networking
+---
+
 # Config Server Architecture
 
 This document provides a technical deep-dive into the architecture of the `config-server` project.

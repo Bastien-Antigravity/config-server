@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,18 +11,19 @@ import (
 
 	"github.com/Bastien-Antigravity/flexible-logger/src/profiles"
 
-	distributed_config "github.com/Bastien-Antigravity/distributed-config"
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 	"github.com/Bastien-Antigravity/universal-logger/src/logger"
 )
 
 func main() {
-	port := flag.String("port", "1026", "Server port") // Default to 1026 per config
-	configPath := flag.String("config", "config_store.json", "Path to persistent config file")
-	flag.Parse()
+	// 0. Initialize Toolbox Config
+	appConfig, err := utilconf.LoadConfig("standalone", nil)
+	if err != nil {
+		fmt.Printf("Critical Error loading config: %v\n", err)
+		os.Exit(1)
+	}
 
-	// 0. Load Distributed Configuration (Standalone)
-	dConf := distributed_config.New("standalone")
+	dConf := appConfig.Config
 	if dConf == nil {
 		fmt.Println("Critical Error: Failed to load distributed configuration")
 		os.Exit(1)
@@ -34,10 +34,11 @@ func main() {
 	logger := logger.NewUniLog(flexLogger)
 	defer logger.Close()
 
-	logger.Info(fmt.Sprintf("Starting Config Server on port %s...", *port))
+	addr, _ := appConfig.GetListenAddr("config_server")
+	logger.Info(fmt.Sprintf("Starting Config Server on %s...", addr))
 
 	// 2. Initialize Persistence and Store
-	pm := store.NewPersistenceManager(*configPath)
+	pm := store.NewPersistenceManager("config_store.json")
 
 	initialConfig := dConf.Config.MemConfig
 	if initialConfig == nil {
@@ -49,12 +50,6 @@ func main() {
 	configStore := store.NewStore()
 	configStore.Replace(initialConfig)
 
-	// 2. Initialize Protocol Server
-	// Wrap the distributed config in a toolbox AppConfig
-	appConfig := &utilconf.AppConfig{
-		Config:  dConf,
-		Profile: "standalone",
-	}
 	srv := server.NewServer(appConfig, logger, configStore, pm)
 
 	// 3. Start Server in Goroutine

@@ -1,3 +1,13 @@
+---
+microservice: config-server
+type: repository
+status: active
+language: go
+tags:
+  - domain/configuration
+  - domain/networking
+---
+
 # Config Server
 
 Config Server is a lightweight, high-performance configuration management service designed for real-time applications. It provides a centralized store for configuration data, capable of persisting changes to disk and broadcasting updates to connected clients instantly.
