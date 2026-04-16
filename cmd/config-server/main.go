@@ -11,7 +11,7 @@ import (
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 	"github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/lifecycle"
 	"github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
-	"github.com/Bastien-Antigravity/universal-logger/src/utils"
+	"github.com/Bastien-Antigravity/universal-logger/src/config"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 	}
 
 	// 2. Initialize Logger (bootstrap)
-	_, appLogger := bootstrap.Init("config-server", "standalone", "no_lock", utils.GetLogLevel("INFO"), false)
+	_, appLogger := bootstrap.Init("config-server", "standalone", "no_lock", "INFO", false, &config.DistConfig{Config: appConfig.Config})
 	defer appLogger.Close()
 
 	// Inject logger into Config for toolbox internal logs

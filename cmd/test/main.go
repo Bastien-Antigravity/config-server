@@ -9,10 +9,9 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/server"
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
-	"github.com/Bastien-Antigravity/flexible-logger/src/profiles"
-
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
-	"github.com/Bastien-Antigravity/universal-logger/src/logger"
+	"github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
+	"github.com/Bastien-Antigravity/universal-logger/src/config"
 )
 
 func main() {
@@ -29,9 +28,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 1. Create Logger (NoLock Profile)
-	flexLogger := profiles.NewDevelLogger("TestServer") // Use DevelLogger for tests
-	logger := logger.NewUniLog(flexLogger)
+	// 1. Create Logger (Devel Profile)
+	_, logger := bootstrap.Init("TestServer", "standalone", "devel", "DEBUG", false, &config.DistConfig{Config: dConf})
 	defer logger.Close()
 
 	addr, _ := appConfig.GetListenAddr("config_server")

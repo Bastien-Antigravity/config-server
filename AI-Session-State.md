@@ -1,4 +1,4 @@
-﻿---
+---
 microservice: config-server
 type: session-state
 status: active
