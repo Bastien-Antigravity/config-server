@@ -5,7 +5,7 @@ go 1.25.4
 require (
 	github.com/Bastien-Antigravity/distributed-config v1.6.6
 	github.com/Bastien-Antigravity/microservice-toolbox/go v1.1.2
-	github.com/Bastien-Antigravity/safe-socket v1.7.5
+	github.com/Bastien-Antigravity/safe-socket v1.7.8
 	github.com/Bastien-Antigravity/universal-logger v1.2.0
 	google.golang.org/protobuf v1.36.11
 )
