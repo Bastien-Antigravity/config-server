@@ -8,23 +8,23 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/server"
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
-	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
-	"github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/lifecycle"
-	"github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
-	"github.com/Bastien-Antigravity/universal-logger/src/config"
+	toolbox_config "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
+	toolbox_lifecycle "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/lifecycle"
+	unilog "github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
+	unilog_config "github.com/Bastien-Antigravity/universal-logger/src/config"
 )
 
 func main() {
 	// 1. Initialize Toolbox Config (which handles name/IP resolution)
 	// Passing nil for specificFlags lets LoadConfig use the default flag parsing.
-	appConfig, err := utilconf.LoadConfig("standalone", nil)
+	appConfig, err := toolbox_config.LoadConfig("standalone", nil)
 	if err != nil {
 		fmt.Printf("Critical Error loading config: %v\n", err)
 		os.Exit(1)
 	}
 
 	// 2. Initialize Logger (bootstrap)
-	_, appLogger := bootstrap.Init("config-server", "standalone", "no_lock", "INFO", false, &config.DistConfig{Config: appConfig.Config})
+	_, appLogger := unilog.Init("config-server", "standalone", "no_lock", "INFO", false, &unilog_config.DistConfig{Config: appConfig.Config})
 	defer appLogger.Close()
 
 	// Inject logger into Config for toolbox internal logs
@@ -36,7 +36,7 @@ func main() {
 	// 3. Initialize Persistence and Store
 	pm := store.NewPersistenceManager("config_store.json")
 
-	initialConfig := appConfig.Config.MemConfig
+	initialConfig := appConfig.Config.LiveConfig
 	if initialConfig == nil {
 		initialConfig = make(store.ConfigMap)
 	}
@@ -57,7 +57,7 @@ func main() {
 	}()
 
 	// 6. Graceful Shutdown via Toolbox
-	lm := lifecycle.NewManagerWithLogger(appLogger)
+	lm := toolbox_lifecycle.NewManagerWithLogger(appLogger)
 	lm.Register("ConfigPersistence", func() error {
 		appLogger.Info("Saving config state on shutdown...")
 		return pm.Save(configStore.Get())
