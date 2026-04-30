@@ -47,7 +47,7 @@ func (s *Server) Start() error {
 	// Use Toolbox Smart Resolver for Binding
 	addr, err := s.AppConfig.GetListenAddr("config_server")
 	if err != nil {
-		s.Logger.Error("Failed to resolve bind address: " + err.Error())
+		s.Logger.Error("Failed to resolve bind address: %v", err)
 		os.Exit(1)
 	}
 
@@ -68,7 +68,7 @@ func (s *Server) Start() error {
 			case <-s.shutdown:
 				return nil
 			default:
-				s.Logger.Error("Accept error: " + err.Error())
+				s.Logger.Error("Accept error: %v", err)
 				continue
 			}
 		}
@@ -112,7 +112,7 @@ func (s *Server) broadcastRegistry() {
 
 	payload, err := json.Marshal(registry)
 	if err != nil {
-		s.Logger.Error("Failed to marshal registry map: " + err.Error())
+		s.Logger.Error("Failed to marshal registry map: %v", err)
 		return
 	}
 	s.broadcastUpdate(schemas.ConfigMsg_BROADCAST_REGISTRY, payload)
@@ -131,13 +131,15 @@ func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 	}
 	bytes, err := proto.Marshal(msg)
 	if err != nil {
-		s.Logger.Error("Broadcast marshal error: " + err.Error())
+		s.Logger.Error("Broadcast marshal error: %v", err)
 		return
 	}
 
 	for name, sock := range s.listeners {
 		go func(n string, sk socket_interfaces.TransportConnection) {
-			sk.Write(bytes)
+			if _, err := sk.Write(bytes); err != nil {
+				s.Logger.Error("Failed to broadcast to %s: %v", n, err)
+			}
 		}(name, sock)
 	}
 }
