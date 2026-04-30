@@ -19,9 +19,9 @@ func main() {
 	fmt.Println("Connected and Configuration Loaded!")
 
 	// 1. Get Initial Config
-	// In the new library, config is loaded into MemConfig
-	cfg := dConf.Config.MemConfig
-	fmt.Printf("Initial Config (MemConfig): %+v\n", cfg)
+	// In the new library, config is loaded into LiveConfig
+	cfg := dConf.Config.LiveConfig
+	fmt.Printf("Initial Config (LiveConfig): %+v\n", cfg)
 
 	// Update logic removed as distributed-config does not expose public Update method yet.
 	fmt.Println("Update capability is not available in distributed-config yet.")

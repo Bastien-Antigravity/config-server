@@ -38,7 +38,7 @@ func main() {
 	// 2. Initialize Persistence and Store
 	pm := store.NewPersistenceManager("config_store.json")
 
-	initialConfig := dConf.Config.MemConfig
+	initialConfig := dConf.Config.LiveConfig
 	if initialConfig == nil {
 		initialConfig = make(store.ConfigMap)
 	}
