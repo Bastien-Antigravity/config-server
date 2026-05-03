@@ -21,6 +21,13 @@ Config Server is a lightweight, high-performance configuration management servic
 - **Reliable Transport**: Built on **[safe-socket](https://github.com/Bastien-Antigravity/safe-socket)** for robust, framed TCP communication with handshake (Identity) support.
 - **Generic Protobuf Messaging**: Bypasses rigid typed schemas over network sockets by dispatching serialized maps natively.
 - **Standalone Mode**: Can run with local configuration or integrate into a distributed system.
+ 
+## 🛡️ Feature Specs & Governance (BDD)
+The behavior of this microservice is governed by strict specifications in the **[[business-bdd-brain|Business-Specs Brain]]**:
+- **Handshake & Identity**: [[FEAT-001-Handshake-Identity|FEAT-001: Mutual Identity Handshake]]
+- **Atomic State Swap**: [[FEAT-002-Atomic-State-Swap|FEAT-002: Lock-free State Updates]]
+- **Broadcast Propagation**: [[FEAT-003-Broadcast-Propagation|FEAT-003: Real-time Update Broadcasting]]
+- **Persistence Safety**: [[FEAT-004-Persistence-Safety|FEAT-004: Atomic Disk Persistence]]
 
 ## Architecture
 
