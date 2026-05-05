@@ -36,8 +36,9 @@ func main() {
 	// 3. Initialize Persistence and Store
 	pm := store.NewPersistenceManager("config_store.json")
 
-	initialConfig := appConfig.Config.LiveConfig
-	if initialConfig == nil {
+	initialConfig, err := pm.Load()
+	if err != nil {
+		appLogger.Warning("Failed to load config persistence: %v", err)
 		initialConfig = make(store.ConfigMap)
 	}
 
