@@ -1,3 +1,9 @@
+---
+microservice: config-server
+type: governance
+status: active
+---
+
 # ⚡ AI Initialization: config-server
 
 > [!IMPORTANT] MANDATORY INITIALIZATION
