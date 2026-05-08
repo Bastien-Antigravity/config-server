@@ -16,8 +16,8 @@ import (
 
 func main() {
 	// 1. Initialize Toolbox Config (which handles name/IP resolution)
-	// Passing nil for specificFlags lets LoadConfig use the default flag parsing.
-	appConfig, err := toolbox_config.LoadConfig("standalone", nil)
+	// Passing "store" flag to allow custom persistence path.
+	appConfig, err := toolbox_config.LoadConfig("standalone", []string{"store"})
 	if err != nil {
 		fmt.Printf("Critical Error loading config: %v\n", err)
 		os.Exit(1)
@@ -34,7 +34,12 @@ func main() {
 	appLogger.Info("Starting Config Server on %s...", addr)
 
 	// 3. Initialize Persistence and Store
-	pm := store.NewPersistenceManager("config_store.json")
+	storePath := "config_store.json"
+	if customPath := appConfig.Args.Extra["store"]; customPath != "" {
+		storePath = customPath
+		appLogger.Info("Using custom persistence store: %s", storePath)
+	}
+	pm := store.NewPersistenceManager(storePath)
 
 	initialConfig, err := pm.Load()
 	if err != nil {
