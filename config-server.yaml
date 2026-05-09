@@ -1,5 +1,7 @@
 common:
     name: common
+    common_file_path: ""
+    public_key: ""
     reset: false
 capabilities:
     config_server:
@@ -15,13 +17,9 @@ capabilities:
     log_server:
         ip: ${LS_IP:127.0.0.2}
         port: ${LS_PORT:9020}
-        grpc_ip: ${LS_GRPC_IP:127.0.0.2}
-        grpc_port: ${LS_GRPC_PORT:9021}
     notif_server:
         ip: ${NT_IP:127.0.0.2}
         port: ${NT_PORT:1026}
-        grpc_ip: ${NT_GRPC_IP:127.0.0.2}
-        grpc_port: ${NT_GRPC_PORT:1027}
     scheduler:
         ip: 127.0.0.2
         port: "5001"
@@ -40,5 +38,3 @@ capabilities:
     web_interface:
         ip: ${WB_IP:127.0.0.2}
         port: ${WB_PORT:8080}
-common_file_path: ""
-memconfigpath: ""

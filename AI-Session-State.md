@@ -28,6 +28,9 @@ directives:
 - [x] Get User Approval
 - [x] Resolved TCP I/O timeout issues (increased default to 60s in safe-socket).
 - [x] Updated all cmd/ entry points to match new universal-logger signature.
+- [x] Fixed compilation error in microservice-toolbox (unused loadedPath).
+- [x] Verified build and startup of core ecosystem (config, log, notif, market, data).
+- [x] Resolved missing gRPC configuration for notif-server.
 
 ## 🐛 Local Issues / Bugs
 - None identified.
@@ -37,3 +40,4 @@ directives:
 - [x] Update config-server/cmd/config-server/main.go
 - [x] Verify everything compiles.
 - [ ] Monitor logs for any remaining timeout issues.
+- [ ] Implement health check aggregation in config-server.
