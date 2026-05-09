@@ -1,22 +1,21 @@
 # 🧬 Project DNA: config-server
 
 ## 🎯 High-Level Intent (BDD)
-- **Goal**: Provide the centralized, authoritative storage and distribution hub for all system configurations and encrypted secrets.
-- **Key Pattern**: **Single Point of Truth** (JSON/YAML backend with live pub-sub distribution) and **Secret Hardening** (server-side decryption/encryption).
-- **Behavioral Source of Truth**: [[business-bdd-brain/02-Behavior-Specs/config-server]]
+- **Goal**: Centralized configuration management for the entire microservice ecosystem.
+- **Key Pattern**: **Externalized Configuration Pattern**.
 
-## 🛠️ Role Specifics
+## 🛠 Technical Constraints
+- **Language**: Go
+- **Persistence**: File-based (JSON) with local cache.
+- **Communication**: HTTP/REST for discovery and retrieval.
+- **Architecture Standard**: Adheres to the ecosystem-wide standards in [[GEMINI.md]].
+
+## 👥 Roles & Responsibilities
 - **Architect**: 
-    - Ensure atomic persistence of the configuration store to prevent corruption during crashes.
-    - Maintain gRPC and TCP protocol parity for configuration fetching.
+    - Ensure configuration integrity and versioning.
+    - Implement secure access controls for sensitive parameters.
 - **QA**: 
-    - Verify that configuration changes are broadcasted to all active subscribers within < 50ms.
-    - Test the "Bootstrapping" sequence (server starting without prior state).
+    - Verify config propagation latency across the network.
 - **Developer**:
-    - Follow the strict `distconf` and `toolbox` integration rules.
-
-## 🚦 Lifecycle & Versioning
-- **Primary Branch**: `develop`
-- **Protected Branches**: `main`, `master`
-- **Versioning Strategy**: Semantic Versioning (vX.Y.Z).
-- **Version Source of Truth**: `VERSION.txt`.
+    - Follow the Go coding standards.
+    - Reference [[GEMINI.md]] for any UI-related diagnostic tools.
