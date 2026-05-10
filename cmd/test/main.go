@@ -24,9 +24,9 @@ func main() {
 
 	// 1. Setup Logger via Universal Logger (InitWithOptions)
 	_, appLogger := unilog_bootstrap.InitWithOptions(unilog_bootstrap.BootstrapOptions{
-		Name:          "ConfigTestServer",
-		ConfigProfile: "standalone",
-		LoggerProfile: "devel",
+		Name:           "ConfigTestServer",
+		ConfigProfile:  "standalone",
+		LoggerProfile:  "devel",
 		ExistingConfig: &unilog_config.DistConfig{Config: appConfig.Config},
 	})
 	defer appLogger.Close()
@@ -67,4 +67,3 @@ func main() {
 	// 5. Wait for termination signals
 	lm.Wait(context.Background())
 }
-

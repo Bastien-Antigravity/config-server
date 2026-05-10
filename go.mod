@@ -4,9 +4,9 @@ go 1.25.4
 
 require (
 	github.com/Bastien-Antigravity/distributed-config v1.9.922
-	github.com/Bastien-Antigravity/microservice-toolbox/go v1.2.2
-	github.com/Bastien-Antigravity/safe-socket v1.8.2
-	github.com/Bastien-Antigravity/universal-logger v1.4.0
+	github.com/Bastien-Antigravity/microservice-toolbox/go v1.2.3-0.20260509215822-c94caca120b4
+	github.com/Bastien-Antigravity/safe-socket v1.8.3-0.20260509172312-f5a3a3178cd9
+	github.com/Bastien-Antigravity/universal-logger v1.4.3-0.20260509215807-a780a3d2991d
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -17,12 +17,6 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-replace (
-	github.com/Bastien-Antigravity/distributed-config => ../distributed-config
-	github.com/Bastien-Antigravity/microservice-toolbox/go => ../microservice-toolbox/go
-	github.com/Bastien-Antigravity/universal-logger => ../universal-logger
 )
