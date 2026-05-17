@@ -13,9 +13,10 @@ services:
       # If the service needs to read/write config files, mount a volume
       - ./config:/config
     networks:
-      - teleremote_network
+      - teleremote-network
     labels: [ com.centurylinklabs.watchtower.enable=true ]
 
 networks:
-  teleremote_network:
+  teleremote-network:
+    name: teleremote-network
     external: true
