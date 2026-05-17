@@ -4,9 +4,10 @@ type: repository
 status: active
 language: go
 tags:
-- \'#service/config-server\'
-  - '#domain/configuration'
-  - '#domain/networking'
+- '#service/config-server'
+- '#domain/configuration'
+- '#domain/networking'
+- '#zone/3-fleet'
 ---
 
 # Config Server

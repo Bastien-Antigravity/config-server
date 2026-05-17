@@ -4,16 +4,21 @@ type: session-state
 status: active
 lifecycle:
   active_branch: develop
-  protected_branches: [main, master]
+  protected_branches:
+  - main
+  - master
   current_version: 1.2.0
   version_source: VERSION.txt
 done_when:
-  - persistence_verified: false
-  - decision_log_updated: false
+- 'persistence_verified: false'
+- 'decision_log_updated: false'
 directives:
-  - autonomous-doc-sync: mandatory
-  - obsidian-brain-sync: mandatory
-  - conventional-commits: mandatory
+- 'autonomous-doc-sync: mandatory'
+- 'obsidian-brain-sync: mandatory'
+- 'conventional-commits: mandatory'
+tags:
+- '#service/config-server'
+- '#zone/3-fleet'
 ---
 
 # 🧠 AI Session State: config-server

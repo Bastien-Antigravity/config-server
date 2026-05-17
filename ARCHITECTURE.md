@@ -3,9 +3,10 @@ microservice: config-server
 type: architecture
 status: active
 tags:
-- \'#service/config-server\'
-  - '#domain/configuration'
-  - '#domain/networking'
+- '#service/config-server'
+- '#domain/configuration'
+- '#domain/networking'
+- '#zone/3-fleet'
 ---
 
 # Config Server Architecture
