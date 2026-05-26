@@ -6,16 +6,16 @@
 
 ## 🛠 Technical Constraints
 - **Language**: Go
-- **Persistence**: File-based (JSON) with local cache.
-- **Communication**: HTTP/REST for discovery and retrieval.
+- **Persistence**: File-based (JSON) with local cache and debounced background persistence (COW pattern).
+- **Communication**: TCP/Safe-Socket (framed, length-prefixed) using Protobuf schemas.
 - **Architecture Standard**: Adheres to the ecosystem-wide standards in [[GEMINI.md]].
 
 ## 👥 Roles & Responsibilities
 - **Architect**: 
-    - Ensure configuration integrity and versioning.
-    - Implement secure access controls for sensitive parameters.
+    - Ensure configuration integrity and atomic updates via Mutex+COW.
+    - Implement non-blocking broadcast synchronization.
 - **QA**: 
-    - Verify config propagation latency across the network.
+    - Verify config propagation latency and connection pruning (IdleTimeout).
 - **Developer**:
-    - Follow the Go coding standards.
-    - Reference [[GEMINI.md]] for any UI-related diagnostic tools.
+    - Follow the Go coding standards and structured logging (universal-logger).
+    - Ensure new operations align with the `ConfigMsg` Protobuf schema.

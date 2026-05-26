@@ -64,8 +64,16 @@ func main() {
 
 	// 6. Graceful Shutdown via Toolbox
 	lm := toolbox_lifecycle.NewManagerWithLogger(appLogger)
+
+	// STOP SERVER FIRST: Ensures the background persistence worker exits cleanly.
+	lm.Register("StopServer", func() error {
+		srv.Stop()
+		return nil
+	})
+
+	// FINAL PERSISTENCE: Now has exclusive access to the config file.
 	lm.Register("ConfigPersistence", func() error {
-		appLogger.Info("Saving config state on shutdown...")
+		appLogger.Info("Performing final terminal state save...")
 		return pm.Save(configStore.Get())
 	})
 

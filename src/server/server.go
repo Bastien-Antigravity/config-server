@@ -87,6 +87,12 @@ func (s *Server) Start() error {
 	}
 }
 
+// Stop signals the server to shutdown.
+func (s *Server) Stop() {
+	s.Logger.Info("Stopping Config Server...")
+	close(s.shutdown)
+}
+
 // -----------------------------------------------------------------------------
 
 // addListener adds a client mailbox to the broadcast list.
@@ -132,11 +138,9 @@ func (s *Server) persistenceWorker() {
 				}
 			}
 		case <-s.shutdown:
-			// Perform a final save if dirty during shutdown
-			if s.dirty.Swap(false) {
-				s.Logger.Info("Final shutdown persistence save...")
-				_ = s.Persistence.Save(s.Store.Get())
-			}
+			// Loop exit only. Final save is handled by the Lifecycle Manager in main.go
+			// to ensure exclusive, non-simultaneous access.
+			s.Logger.Info("Persistence worker exiting.")
 			return
 		}
 	}
