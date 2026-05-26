@@ -35,7 +35,7 @@ func main() {
 	appLogger.Info("Starting Config Test Server on %s...", addr)
 
 	// 2. Initialize Persistence and Store
-	pm := store.NewPersistenceManager("config_store.json")
+	pm := store.NewPersistenceManager("config_store.json", appLogger)
 
 	initialConfig, err := pm.Load()
 	if err != nil {

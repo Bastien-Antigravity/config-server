@@ -6,20 +6,24 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
 
 // PersistenceManager handles saving and loading the configuration from disk.
 type PersistenceManager struct {
 	filePath string
+	Logger   interfaces.Logger
 	mu       sync.Mutex // Ensures only one save operation happens at a time
 }
 
 // -----------------------------------------------------------------------------
 
 // NewPersistenceManager creates a new manager for the given file path.
-func NewPersistenceManager(path string) *PersistenceManager {
+func NewPersistenceManager(path string, logger interfaces.Logger) *PersistenceManager {
 	return &PersistenceManager{
 		filePath: path,
+		Logger:   logger,
 	}
 }
 

@@ -12,7 +12,7 @@ require (
 
 require (
 	capnproto.org/go/capnp/v3 v3.1.0-alpha.2 // indirect
-	github.com/Bastien-Antigravity/flexible-logger v1.3.3 // indirect
+	github.com/Bastien-Antigravity/flexible-logger v0.0.1 // indirect
 	github.com/colega/zeropool v0.0.0-20230505084239-6fb4a4f75381 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

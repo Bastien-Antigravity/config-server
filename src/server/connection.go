@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"io"
+	"net"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
 
@@ -16,7 +17,7 @@ import (
 func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	defer sock.Close()
 
-	// 1. Extract Client Identity from Handshake (peeling wrappers if needed)
+	// 1. Extract Client Identity from Handshake
 	identity := safesocket.GetIdentity(sock)
 	if identity == nil {
 		s.Logger.Error("Connection does not have a Handshake identity")
@@ -25,6 +26,12 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 
 	name, _ := identity.FromName()
 	address, _ := identity.FromAddress()
+	
+	// Stable Identity Resolution: Strip port from address if present
+	host, _, err := net.SplitHostPort(address)
+	if err == nil {
+		address = host
+	}
 	clientName := fmt.Sprintf("%s-%s", name, address)
 
 	s.Logger.Info(fmt.Sprintf("Client identified: %s", clientName))
@@ -32,24 +39,36 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	// Disable all timeouts to allow the connection to remain open forever.
 	_ = sock.SetIdleTimeout(0)
 
-	s.addListener(clientName, sock)
-	defer s.removeListener(clientName)
+	// Initialize Mailbox (tight buffer of 3 messages)
+	mailbox := &clientMailbox{
+		name: clientName,
+		send: make(chan []byte, 3),
+	}
 
-	// 2. Message Loop
-	// Allocation Optimization: Reuse buffer
-	// Start with 64KB (typical max UDP, reasonable for TCP config messages)
+	s.addListener(clientName, mailbox)
+	defer s.removeListener(clientName, mailbox)
+
+	// 2. Start Writer Loop
+	// This goroutine handles all outgoing messages for this client.
+	go func() {
+		for msg := range mailbox.send {
+			if _, err := sock.Write(msg); err != nil {
+				s.Logger.Error("Write failed to %s: %v", clientName, err)
+				break
+			}
+		}
+		// If the loop exits (mailbox closed or write error), close the socket.
+		// This will signal the Reader loop to exit as well.
+		sock.Close()
+	}()
+
+	// 3. Reader Loop (Main Goroutine)
 	buf := make([]byte, 65535)
 
 	for {
-		// No deadline set here, allowing infinite wait on Read.
-
-		// Use Read(buf) instead of ReadMessage to reuse buffer
 		n, err := sock.Read(buf)
 		if err != nil {
 			if err == io.ErrShortBuffer {
-				// Buffer too small. Resize double and retry.
-				// Note: FramedTCP uses Peek, so the header is still there. We can safely retry.
-				// Safety check: Limit max size to avoid OOM (e.g. 10MB)
 				if len(buf) >= 10*1024*1024 {
 					s.Logger.Error(fmt.Sprintf("Message too large from %s", clientName))
 					return
@@ -67,8 +86,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 		}
 
 		// Handle ConfigMsg
-		// We pass the slice buf[:n]
-		response, err := core.ProcessRequest(buf[:n], s.Store, s.Persistence, s.broadcastUpdate)
+		response, err := core.ProcessRequest(buf[:n], s.Store, s.Persistence, s.broadcastUpdate, s.TriggerSave)
 		if err != nil {
 			s.Logger.Error(fmt.Sprintf("Error processing request from %s: %v", clientName, err))
 			return
@@ -81,8 +99,12 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 				return
 			}
 
-			if _, err := sock.Write(bytes); err != nil {
-				s.Logger.Error(fmt.Sprintf("Write error to %s: %v", clientName, err))
+			// Hand off the response to the Writer Loop
+			select {
+			case mailbox.send <- bytes:
+				// Response queued
+			default:
+				s.Logger.Warning("Response mailbox full for %s. Dropping client.", clientName)
 				return
 			}
 		}

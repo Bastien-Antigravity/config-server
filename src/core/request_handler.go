@@ -14,9 +14,9 @@ import (
 
 // ProcessRequest handles the business logic for incoming configuration requests.
 // It returns a response message to be sent back to the client.
-// It may also trigger a broadcast via the provided callback.
+// It may also trigger a broadcast and persistence via the provided callbacks.
 // -----------------------------------------------------------------------------
-func ProcessRequest(data []byte, s *store.Store, pm *store.PersistenceManager, broadcast func(config.ConfigMsg_Cmd, []byte)) (*config.ConfigMsg, error) {
+func ProcessRequest(data []byte, s *store.Store, pm *store.PersistenceManager, broadcast func(config.ConfigMsg_Cmd, []byte), triggerSave func()) (*config.ConfigMsg, error) {
 	req := &config.ConfigMsg{}
 	if err := proto.Unmarshal(data, req); err != nil {
 		return nil, fmt.Errorf("protobuf unmarshal error: %w", err)
@@ -45,8 +45,10 @@ func ProcessRequest(data []byte, s *store.Store, pm *store.PersistenceManager, b
 		if err == nil {
 			resp.Command = config.ConfigMsg_ACK
 			payload, _ := json.Marshal(updates)
+			
+			// Asynchronous Rituals: Broadcast and Persist
 			go broadcast(config.ConfigMsg_BROADCAST_SYNC, payload)
-			helpers.TryPersist(pm, s)
+			triggerSave()
 		} else {
 			resp.Command = config.ConfigMsg_ERROR
 			resp.Payload = []byte("atomic update failed")

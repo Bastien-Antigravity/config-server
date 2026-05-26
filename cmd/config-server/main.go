@@ -39,7 +39,7 @@ func main() {
 		storePath = customPath
 		appLogger.Info("Using custom persistence store: %s", storePath)
 	}
-	pm := store.NewPersistenceManager(storePath)
+	pm := store.NewPersistenceManager(storePath, appLogger)
 
 	initialConfig, err := pm.Load()
 	if err != nil {
