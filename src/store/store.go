@@ -1,7 +1,7 @@
 package store
 
 import (
-	"sync/atomic"
+	"sync"
 )
 
 // ConfigMap represents the configuration data structure (Section -> Key -> Value)
@@ -9,45 +9,43 @@ type ConfigMap map[string]map[string]string
 
 // -----------------------------------------------------------------------------
 
-// Store provides a thread-safe atomic configuration store.
-// Reads are lock-free using atomic.Pointer.
-// Writes use CompareAndSwapLoop (or just Store if we enforce a single writer via a mutex wrapper,
-// but here we provide a Replace method for full atomic swaps).
+// Store provides a thread-safe configuration store.
+// It uses a RWMutex and a Copy-On-Write (COW) strategy to provide
+// extremely fast reads while maintaining atomic, side-effect-free updates.
 type Store struct {
-	// config holds the pointer to the immutable map
-	config atomic.Pointer[ConfigMap]
+	mu     sync.RWMutex
+	config ConfigMap
 }
 
 // -----------------------------------------------------------------------------
 
 // NewStore initializes a new Store with an empty config.
 func NewStore() *Store {
-	s := &Store{}
-	empty := make(ConfigMap)
-	s.config.Store(&empty)
-	return s
+	return &Store{
+		config: make(ConfigMap),
+	}
 }
 
 // -----------------------------------------------------------------------------
 
 // Get returns the current configuration map.
-// This is a lock-free operation.
-// The returned map SHOULD NOT be modified effectively (treat as immutable).
+// Optimization: Returns the map directly (Read-Fast path).
+// Callers MUST treat the returned map as immutable.
 func (s *Store) Get() ConfigMap {
-	val := s.config.Load()
-	if val == nil {
-		return make(ConfigMap)
-	}
-	return *val
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config
 }
 
 // -----------------------------------------------------------------------------
 
 // GetSection returns a copy of a specific section.
 func (s *Store) GetSection(section string) map[string]string {
-	conf := s.Get()
-	if val, ok := conf[section]; ok {
-		// Return a copy to prevent modification of the shared map from outside
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	if val, ok := s.config[section]; ok {
+		// We return a copy so the caller can't accidentally modify the master store
 		copyMap := make(map[string]string, len(val))
 		for k, v := range val {
 			copyMap[k] = v
@@ -60,39 +58,45 @@ func (s *Store) GetSection(section string) map[string]string {
 // -----------------------------------------------------------------------------
 
 // Replace atomically replaces the entire configuration with a new one.
-// This is the "Drop-In Replacement" strategy.
+// Ensures the store "owns" the data by performing a deep copy.
 func (s *Store) Replace(newConfig ConfigMap) {
-	s.config.Store(&newConfig)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config = DeepCopy(newConfig)
 }
 
 // -----------------------------------------------------------------------------
 
-// UpdateAtomic applies a modification function to the current config and atomically updates it.
-// It retries if the config has changed in the meantime (Compare-And-Swap loop).
-// modificationFn should return the new state based on the current state.
-func (s *Store) UpdateAtomic(modificationFn func(current ConfigMap) (ConfigMap, error)) error {
-	for {
-		currentPtr := s.config.Load()
-		current := *currentPtr
+// UpdateAtomic applies a modification function to the current config.
+// Implementation: Copy-On-Write. 
+// It creates a deep copy to pass to the modification function. If the function
+// succeeds, the internal pointer is swapped. If it fails, the master state
+// remains untouched (Atomicity/Rollback).
+func (s *Store) UpdateAtomic(modificationFn func(sandbox ConfigMap) (ConfigMap, error)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-		// Create a deep copy to modify
-		newConfig, err := modificationFn(current)
-		if err != nil {
-			return err
-		}
-
-		// Attempt to swap
-		if s.config.CompareAndSwap(currentPtr, &newConfig) {
-			return nil
-		}
-		// If failed, loop and try again with the new current value
+	// 1. Create a sandbox for the modification
+	sandbox := DeepCopy(s.config)
+	
+	// 2. Apply updates to the sandbox
+	result, err := modificationFn(sandbox)
+	if err != nil {
+		return err // Atomicity: s.config is unchanged
 	}
+
+	// 3. Commit the new version
+	s.config = result
+	return nil
 }
 
 // -----------------------------------------------------------------------------
 
-// Helper to deep copy the map (used during updates)
+// Helper to deep copy the map (used for COW updates)
 func DeepCopy(src ConfigMap) ConfigMap {
+	if src == nil {
+		return make(ConfigMap)
+	}
 	dst := make(ConfigMap)
 	for sect, kv := range src {
 		dstSect := make(map[string]string, len(kv))

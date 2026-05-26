@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
 
@@ -36,8 +37,9 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 
 	s.Logger.Info(fmt.Sprintf("Client identified: %s", clientName))
 
-	// Disable all timeouts to allow the connection to remain open forever.
-	_ = sock.SetIdleTimeout(0)
+	// Set a reasonable idle timeout to clean up zombie connections.
+	// 10 minutes is a safe balance for configuration synchronization.
+	_ = sock.SetIdleTimeout(10 * time.Minute)
 
 	// Initialize Mailbox (tight buffer of 3 messages)
 	mailbox := &clientMailbox{
@@ -49,7 +51,6 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	defer s.removeListener(clientName, mailbox)
 
 	// 2. Start Writer Loop
-	// This goroutine handles all outgoing messages for this client.
 	go func() {
 		for msg := range mailbox.send {
 			if _, err := sock.Write(msg); err != nil {
@@ -57,28 +58,14 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 				break
 			}
 		}
-		// If the loop exits (mailbox closed or write error), close the socket.
-		// This will signal the Reader loop to exit as well.
 		sock.Close()
 	}()
 
 	// 3. Reader Loop (Main Goroutine)
-	buf := make([]byte, 65535)
-
+	// Using ReadMessage() which is provided by safe-socket for robust framing.
 	for {
-		n, err := sock.Read(buf)
+		data, err := sock.ReadMessage()
 		if err != nil {
-			if err == io.ErrShortBuffer {
-				if len(buf) >= 10*1024*1024 {
-					s.Logger.Error(fmt.Sprintf("Message too large from %s", clientName))
-					return
-				}
-				newSize := len(buf) * 2
-				s.Logger.Info(fmt.Sprintf("Resizing read buffer for %s to %d bytes", clientName, newSize))
-				buf = make([]byte, newSize)
-				continue
-			}
-
 			if err != io.EOF {
 				s.Logger.Error(fmt.Sprintf("Read error from %s: %v", clientName, err))
 			}
@@ -86,7 +73,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 		}
 
 		// Handle ConfigMsg
-		response, err := core.ProcessRequest(buf[:n], s.Store, s.Persistence, s.broadcastUpdate, s.TriggerSave)
+		response, err := core.ProcessRequest(data, s.Store, s.Persistence, s.broadcastUpdate, s.TriggerSave)
 		if err != nil {
 			s.Logger.Error(fmt.Sprintf("Error processing request from %s: %v", clientName, err))
 			return
