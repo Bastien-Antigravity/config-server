@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -34,6 +36,7 @@ type Server struct {
 	listenersLock sync.RWMutex
 	shutdown      chan struct{}
 	dirty         atomic.Bool
+	OnUpdate      func()
 }
 
 // NewServer creates a new Config Server.
@@ -95,6 +98,54 @@ func (s *Server) Stop() {
 
 // -----------------------------------------------------------------------------
 
+// BroadcastConfig sends a full configuration update to all connected clients.
+func (s *Server) BroadcastConfig() {
+	s.Logger.Info("Broadcasting full configuration update to all clients")
+	if s.OnUpdate != nil {
+		go s.OnUpdate()
+	}
+	config := s.Store.Get()
+	payload, err := json.Marshal(config)
+	if err != nil {
+		s.Logger.Error("Failed to marshal config for broadcast: %v", err)
+		return
+	}
+	s.broadcastUpdate(schemas.ConfigMsg_BROADCAST_SYNC, payload)
+}
+
+// GetActiveClients returns the current number of connected clients.
+func (s *Server) GetActiveClients() int {
+	s.listenersLock.RLock()
+	defer s.listenersLock.RUnlock()
+	return len(s.listeners)
+}
+
+// GetClientNames returns the names of all currently connected clients.
+func (s *Server) GetClientNames() []string {
+	s.listenersLock.RLock()
+	defer s.listenersLock.RUnlock()
+	names := make([]string, 0, len(s.listeners))
+	for name := range s.listeners {
+		names = append(names, name)
+	}
+	return names
+}
+
+// ReloadConfig reloads the configuration from the base YAML file.
+func (s *Server) ReloadConfig(ctx context.Context) error {
+	s.Logger.Info("Reloading configuration from disk...")
+	
+	if err := s.AppConfig.Config.Reload(); err != nil {
+		return fmt.Errorf("failed to reload config: %w", err)
+	}
+	
+	s.Logger.Info("Config reloaded successfully")
+	s.BroadcastConfig()
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+
 // addListener adds a client mailbox to the broadcast list.
 func (s *Server) addListener(name string, mailbox *clientMailbox) {
 	s.listenersLock.Lock()
@@ -110,6 +161,7 @@ func (s *Server) removeListener(name string, mailbox *clientMailbox) {
 	s.listenersLock.Lock()
 	if current, ok := s.listeners[name]; ok && current == mailbox {
 		delete(s.listeners, name)
+		close(mailbox.send) // Safe to close here as we removed it from the map under lock
 		s.Logger.Info("Listener removed: %s", name)
 	}
 	s.listenersLock.Unlock()
@@ -187,14 +239,13 @@ func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 
 	for name, mailbox := range s.listeners {
 		// Non-blocking send to mailbox.
-		// If the channel is full, we close it to force a disconnection.
+		// If the channel is full, we drop the message for that client to avoid blocking.
+		// The client will eventually be cleaned up by the idle timeout if it remains stuck.
 		select {
 		case mailbox.send <- bytes:
 			// Message queued
 		default:
-			s.Logger.Warning("Client %s mailbox full. Dropping connection to maintain sync.", name)
-			// Closing the channel signals the writer loop to exit and close the socket.
-			close(mailbox.send)
+			s.Logger.Warning("Client %s mailbox full. Dropping message.", name)
 		}
 	}
 }

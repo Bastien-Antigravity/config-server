@@ -54,35 +54,53 @@ func (pm *PersistenceManager) Load() (ConfigMap, error) {
 // -----------------------------------------------------------------------------
 
 // Save writes the given ConfigMap to disk in a human-readable JSON format.
-// It uses an atomic write pattern (write to temp file, then rename) to prevent
-// file corruption in case of crashes during the write process.
+// It uses an atomic write pattern (write to temp file, sync, then rename) to 
+// prevent file corruption in case of crashes during the write process.
 func (pm *PersistenceManager) Save(config ConfigMap) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	// Ensure directory exists
 	dir := filepath.Dir(pm.filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Marshaling with Indent for human readability
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// Write to a temporary file first
-	tmpPath := pm.filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temporary config file: %w", err)
+	// 1. Create a temporary file in the same directory
+	tmpFile, err := os.CreateTemp(dir, "config_*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath) // Cleanup if we return early (no-op after Rename)
+	}()
+
+	// 2. Write and Sync data
+	if _, err := tmpFile.Write(data); err != nil {
+		return fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync temporary file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
 
-	// Rename the temporary file to the final path (atomic on most systems)
+	// 3. Atomic Rename
 	if err := os.Rename(tmpPath, pm.filePath); err != nil {
-		// Attempt to clean up temp file if rename fails
-		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to commit config file: %w", err)
+	}
+
+	// 4. Sync the directory to ensure the rename is persisted
+	if df, err := os.Open(dir); err == nil {
+		_ = df.Sync()
+		_ = df.Close()
 	}
 
 	return nil

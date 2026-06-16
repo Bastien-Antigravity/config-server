@@ -4,17 +4,25 @@ FROM golang:1.25-alpine AS builder
 # Install build dependencies
 RUN apk add --no-cache git gcc musl-dev ca-certificates tzdata
 
-WORKDIR /config-server
+WORKDIR /workspace
 
-# Copy dependency files first for better caching
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy required local modules for 'replace' directives
+COPY microservice-toolbox ./microservice-toolbox
+COPY universal-logger ./universal-logger
+COPY distributed-config ./distributed-config
+COPY safe-socket ./safe-socket
+COPY flexible-logger ./flexible-logger
 
-# Copy the rest of the source code
-COPY . .
+# Copy the target service
+COPY config-server ./config-server
+
+WORKDIR /workspace/config-server
+
+# Ensure dependencies are tidy for linux build
+RUN go mod tidy && go mod download
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /config-server/config-server ./cmd/config-server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /config-server-bin ./cmd/config-server
 
 # === RUNTIME STAGE ===
 FROM alpine:3.20
@@ -25,7 +33,7 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /config-server
 
 # Copy the binary from the build stage
-COPY --from=builder /config-server/config-server /config-server/config-server
+COPY --from=builder /config-server-bin /config-server/config-server
 
 # Set the entrypoint
 ENTRYPOINT ["/config-server/config-server"]

@@ -59,6 +59,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 			}
 		}
 		sock.Close()
+		s.removeListener(clientName, mailbox)
 	}()
 
 	// 3. Reader Loop (Main Goroutine)
@@ -73,6 +74,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 		}
 
 		// Handle ConfigMsg
+		s.Logger.Info("Processing request from %s (data len: %d)", clientName, len(data))
 		response, err := core.ProcessRequest(data, s.Store, s.Persistence, s.broadcastUpdate, s.TriggerSave)
 		if err != nil {
 			s.Logger.Error(fmt.Sprintf("Error processing request from %s: %v", clientName, err))
@@ -80,6 +82,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 		}
 
 		if response != nil {
+			s.Logger.Info("Sending response %v to %s", response.Command, clientName)
 			bytes, err := proto.Marshal(response)
 			if err != nil {
 				s.Logger.Error(fmt.Sprintf("Failed to marshal response: %v", err))

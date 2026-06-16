@@ -7,6 +7,8 @@ tags:
 - '#domain/configuration'
 - '#domain/networking'
 - '#zone/3-fleet'
+- '#type/architecture'
+- '#state/active'
 ---
 
 # Config Server Architecture
@@ -37,11 +39,14 @@ graph TD
     Broadcaster -->|Buffered Push| ConnectionHandler
     Persistence <-->|Debounced 5s Write| Disk[config_store.json]
 ```
-
 ### 1. Network Layer (`safe-socket`)
 The server delegates low-level networking to the **[safe-socket](https://github.com/Bastien-Antigravity/safe-socket)** library.
 - **Profile**: `tcp-hello`
+- **Shadow Port Protocol**: In accordance with platform standards, gRPC services are exposed on the **Shadow Port** (Base Port + 1).
+  - TCP Management Port: `3306`
+  - gRPC Sync Port: `3307`
 - **Features**: 
+...
   - **Handshake**: Enforces an identity exchange (Name/Group) immediately after connection.
   - **Framing**: Handled via `ReadMessage()`, ensuring complete protocol frames are processed.
   - **Resource Management**: Implements a 10-minute `IdleTimeout` to prune zombie connections.
@@ -62,6 +67,19 @@ The server delegates low-level networking to the **[safe-socket](https://github.
   - Uses `sync.RWMutex` to protect nested map structures.
   - **Copy-On-Write (COW)**: `Get()` provides zero-allocation direct access (fast path). `UpdateAtomic()` creates a sandbox copy, ensuring existing readers are never exposed to intermediate states.
 - **Persistence**: A debounced background worker (`persistenceWorker`) writes the state to disk at most once every 5 seconds if marked as `dirty`.
+
+### 5. Unified Controller Interface (`src/core/controller.go`)
+To prevent package cycles and maintain protocol-agnostic business logic, all management actions are defined inside the `core.ConfigController` interface:
+- **`GetConfig` / `SetConfig` / `DeleteConfig`**: Interface methods for atomic value updates and deletions.
+- **`ListConfig`**: Returns a merged configuration map of active overrides and static base YAML settings (e.g., `common`, `capabilities`).
+- **`ReloadConfig` / `PersistConfig` / `GetStatus`**: Unified hooks for reloading, saving, and auditing runtime health.
+This interface is implemented directly by the main `server.Server` struct.
+
+### 6. Decoupled Delivery Adapters
+The management interfaces are designed as pluggable, decoupled adapters depending strictly on the `core.ConfigController` interface:
+- **gRPC Adapter (`src/grpc_control`)**: Implements `ConfigControlServiceServer`, translating protobuf requests to controller method calls.
+- **REST Adapter (`src/rest`)**: Exposes JSON endpoints under `/api/v1/config/` for external dashboards (e.g., the Web Interface).
+- **Telegram / Tele-Remote (`src/telegram`)**: Encapsulates dynamic menu orchestration (`MenuManager`) and connection handshakes, keeping `main.go` completely free of presentation logic.
 
 ## Data Flow
 

@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package grpc_control;
+
+option go_package = "src/grpc_control";
+
+// -----------------------------------------------------------------------------
+// Config Control Service Definition
+// -----------------------------------------------------------------------------
+
+service ConfigControlService {
+    // Config Management
+    rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+    rpc SetConfig(SetConfigRequest) returns (ControlResponse);
+    rpc ListConfig(ListConfigRequest) returns (ListConfigResponse);
+    rpc ReloadConfig(ReloadConfigRequest) returns (ControlResponse);
+    rpc PersistConfig(PersistConfigRequest) returns (ControlResponse);
+
+    // Server Status
+    rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+// -----------------------------------------------------------------------------
+// Common Messages
+// -----------------------------------------------------------------------------
+
+message ControlResponse {
+    bool success = 1;
+    string message = 2;
+    int64 timestamp = 3;
+    string error_code = 4;
+}
+
+// -----------------------------------------------------------------------------
+// Config Management
+// -----------------------------------------------------------------------------
+
+message GetConfigRequest {
+    string section = 1;
+    string key = 2;
+}
+
+message GetConfigResponse {
+    bool success = 1;
+    string value = 2;
+    int64 timestamp = 3;
+}
+
+message SetConfigRequest {
+    string section = 1;
+    string key = 2;
+    string value = 3;
+}
+
+message ListConfigRequest {
+}
+
+message ListConfigResponse {
+    bool success = 1;
+    string json_config = 2; // Full ConfigMap as JSON
+    int64 timestamp = 3;
+}
+
+message ReloadConfigRequest {
+}
+
+message PersistConfigRequest {
+}
+
+// -----------------------------------------------------------------------------
+// Status
+// -----------------------------------------------------------------------------
+
+message GetStatusRequest {
+}
+
+message GetStatusResponse {
+    bool healthy = 1;
+    string status = 2;
+    string version = 3;
+    int64 timestamp = 4;
+    int32 active_clients = 5;
+    repeated string client_names = 6;
+}
