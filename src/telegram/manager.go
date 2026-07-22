@@ -107,6 +107,7 @@ func (m *MenuManager) RebuildMenu() {
 	})
 
 	m.tc.UpdateActions(actions)
+	m.tc.PushMenuUpdate()
 }
 
 // SetupTelegram initializes the Tele-Remote client, binds dynamic updates, and registers with Lifecycle Manager.

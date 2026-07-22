@@ -67,7 +67,11 @@ func (s *Server) Start() error {
 
 	// Create a server socket using safe-socket factory
 	// We use "tcp-hello" profile which automatically handles the Handshake
-	serverSock, err := factory.Create("tcp-hello", addr, "127.0.0.1", "server", true)
+	// We configure a 10-minute idle timeout for all accepted connections.
+	config := factory.SocketConfig{
+		Deadline: 10 * time.Minute,
+	}
+	serverSock, err := factory.CreateWithConfig("tcp-hello", addr, config, "server", true)
 	if err != nil {
 		return err // Wrap error in caller if needed, or return raw err
 	}

@@ -1,6 +1,7 @@
 package rest
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,9 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/core"
 	unilog_interfaces "github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
+
+//go:embed mfe.js
+var mfeJS string
 
 // -----------------------------------------------------------------------------
 // RESTHandler handles HTTP management requests
@@ -39,6 +43,14 @@ func (h *RESTHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/reload", h.handleReloadConfig)
 	mux.HandleFunc("/api/v1/config/persist", h.handlePersistConfig)
 	mux.HandleFunc("/api/v1/status", h.handleStatus)
+
+	// Serve embedded static files (OpenMFE Web Component bundles)
+	mfeHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(mfeJS))
+	}
+	mux.HandleFunc("/static/js/mfe-loader.js", mfeHandler)
+	mux.HandleFunc("/static/mfe.js", mfeHandler)
 }
 
 // -----------------------------------------------------------------------------
@@ -130,6 +142,11 @@ type httpListResponse struct {
 }
 
 func (h *RESTHandler) handleListConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	config, err := h.control.ListConfig(r.Context())
 	if err != nil {
 		h.sendJSON(w, httpListResponse{
@@ -156,6 +173,11 @@ func (h *RESTHandler) handleListConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RESTHandler) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	err := h.control.ReloadConfig(r.Context())
 	if err != nil {
 		h.sendJSON(w, httpControlResponse{
@@ -175,6 +197,11 @@ func (h *RESTHandler) handleReloadConfig(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *RESTHandler) handlePersistConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	err := h.control.PersistConfig(r.Context())
 	if err != nil {
 		h.sendJSON(w, httpControlResponse{
@@ -203,6 +230,11 @@ type httpStatusResponse struct {
 }
 
 func (h *RESTHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	statusInfo, err := h.control.GetStatus(r.Context())
 	if err != nil {
 		h.sendJSON(w, httpStatusResponse{
@@ -232,17 +264,31 @@ func (h *RESTHandler) sendJSON(w http.ResponseWriter, data interface{}) {
 
 // -----------------------------------------------------------------------------
 
-// StartServer starts a simple HTTP server for the REST API
-func (h *RESTHandler) StartServer(port int) error {
+// Handler returns the REST API handler with route registration and CORS wrapping.
+func (h *RESTHandler) Handler() http.Handler {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+// StartServer starts a simple HTTP server for the REST API
+func (h *RESTHandler) StartServer(port int) error {
 	addr := fmt.Sprintf(":%d", port)
 	h.logger.Info("Starting REST management server on %s", addr)
 
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      h.Handler(),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
