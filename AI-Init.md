@@ -2,6 +2,11 @@
 microservice: config-server
 type: governance
 status: active
+tags:
+- '#service/config-server'
+- '#type/governance'
+- '#state/active'
+- '#zone/3-fleet'
 ---
 
 # ⚡ AI Initialization: config-server

@@ -8,6 +8,8 @@ tags:
 - '#domain/configuration'
 - '#domain/networking'
 - '#zone/3-fleet'
+- '#type/repository'
+- '#state/active'
 ---
 
 # Config Server
@@ -25,11 +27,11 @@ Config Server is a lightweight, high-performance configuration management servic
 - **Standalone Mode**: Can run with local configuration or integrate into a distributed system.
  
 ## 🛡️ Feature Specs & Governance (BDD)
-The behavior of this microservice is governed by strict specifications in the **[[business-bdd-brain|Business-Specs Brain]]**:
-- **Handshake & Identity**: [[FEAT-001-Handshake-Identity|FEAT-001: Mutual Identity Handshake]]
-- **Atomic State Swap**: [[FEAT-002-Atomic-State-Swap|FEAT-002: Read-Fast COW updates]]
-- **Broadcast Propagation**: [[FEAT-003-Broadcast-Propagation|FEAT-003: Non-blocking Mailbox Broadcasting]]
-- **Persistence Safety**: [[FEAT-004-Persistence-Safety|FEAT-004: Debounced Background Persistence]]
+The behavior of this microservice is governed by strict specifications in the ****:
+- **Handshake & Identity**: 
+- **Atomic State Swap**: 
+- **Broadcast Propagation**: 
+- **Persistence Safety**: 
 
 ## Architecture
 

@@ -1,4 +1,13 @@
-# 🧬 Project DNA: config-server
+---
+microservice: 08-Base-Scripts
+type: note
+status: active
+tags:
+- '#service/08-Base-Scripts'
+- '#type/note'
+- '#state/active'
+- '#zone/3-fleet'
+---# 🧬 Project DNA: config-server
 
 ## 🎯 High-Level Intent (BDD)
 - **Goal**: Centralized configuration management for the entire microservice ecosystem.
@@ -8,7 +17,7 @@
 - **Language**: Go
 - **Persistence**: File-based (JSON) with local cache and debounced background persistence (COW pattern).
 - **Communication**: TCP/Safe-Socket (framed, length-prefixed) using Protobuf schemas.
-- **Architecture Standard**: Adheres to the ecosystem-wide standards in [[GEMINI.md]].
+- **Architecture Standard**: Adheres to the ecosystem-wide standards in .
 
 ## 👥 Roles & Responsibilities
 - **Architect**: 
