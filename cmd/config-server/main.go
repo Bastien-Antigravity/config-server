@@ -68,8 +68,6 @@ func main() {
 		storePath = filepath.Join(baseDir, "config_store.json")
 	}
 
-
-
 	if customPath := appConfig.Args.Extra["store"]; customPath != "" {
 		storePath = customPath
 		appLogger.Info("Using custom persistence store: %s", storePath)

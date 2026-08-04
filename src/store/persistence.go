@@ -54,7 +54,7 @@ func (pm *PersistenceManager) Load() (ConfigMap, error) {
 // -----------------------------------------------------------------------------
 
 // Save writes the given ConfigMap to disk in a human-readable JSON format.
-// It uses an atomic write pattern (write to temp file, sync, then rename) to 
+// It uses an atomic write pattern (write to temp file, sync, then rename) to
 // prevent file corruption in case of crashes during the write process.
 func (pm *PersistenceManager) Save(config ConfigMap) error {
 	pm.mu.Lock()

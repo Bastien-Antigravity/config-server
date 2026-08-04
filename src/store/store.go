@@ -43,7 +43,7 @@ func (s *Store) Get() ConfigMap {
 func (s *Store) GetSection(section string) map[string]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	if val, ok := s.config[section]; ok {
 		// We return a copy so the caller can't accidentally modify the master store
 		copyMap := make(map[string]string, len(val))
@@ -68,7 +68,7 @@ func (s *Store) Replace(newConfig ConfigMap) {
 // -----------------------------------------------------------------------------
 
 // UpdateAtomic applies a modification function to the current config.
-// Implementation: Copy-On-Write. 
+// Implementation: Copy-On-Write.
 // It creates a deep copy to pass to the modification function. If the function
 // succeeds, the internal pointer is swapped. If it fails, the master state
 // remains untouched (Atomicity/Rollback).
@@ -78,7 +78,7 @@ func (s *Store) UpdateAtomic(modificationFn func(sandbox ConfigMap) (ConfigMap, 
 
 	// 1. Create a sandbox for the modification
 	sandbox := DeepCopy(s.config)
-	
+
 	// 2. Apply updates to the sandbox
 	result, err := modificationFn(sandbox)
 	if err != nil {

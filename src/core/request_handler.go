@@ -45,7 +45,7 @@ func ProcessRequest(data []byte, s *store.Store, pm *store.PersistenceManager, b
 		if err == nil {
 			resp.Command = config.ConfigMsg_ACK
 			payload, _ := json.Marshal(updates)
-			
+
 			// Asynchronous Rituals: Broadcast and Persist
 			go broadcast(config.ConfigMsg_BROADCAST_SYNC, payload)
 			triggerSave()

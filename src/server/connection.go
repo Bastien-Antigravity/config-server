@@ -27,7 +27,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 
 	name, _ := identity.FromName()
 	address, _ := identity.FromAddress()
-	
+
 	// Stable Identity Resolution: Strip port from address if present
 	host, _, err := net.SplitHostPort(address)
 	if err == nil {

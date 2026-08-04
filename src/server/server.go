@@ -138,11 +138,11 @@ func (s *Server) GetClientNames() []string {
 // ReloadConfig reloads the configuration from the base YAML file.
 func (s *Server) ReloadConfig(ctx context.Context) error {
 	s.Logger.Info("Reloading configuration from disk...")
-	
+
 	if err := s.AppConfig.Config.Reload(); err != nil {
 		return fmt.Errorf("failed to reload config: %w", err)
 	}
-	
+
 	s.Logger.Info("Config reloaded successfully")
 	s.BroadcastConfig()
 	return nil
