@@ -14,6 +14,7 @@ COPY universal-logger ./universal-logger
 COPY distributed-config ./distributed-config
 COPY safe-socket ./safe-socket
 COPY flexible-logger ./flexible-logger
+COPY shared-config ./shared-config
 
 # Copy the target service
 COPY config-server ./config-server
@@ -34,8 +35,9 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /config-server
 
-# Copy the binary from the build stage
+# Copy binary and fallback default standalone configuration
 COPY --from=builder /config-server-bin /config-server/config-server
+COPY --from=builder /workspace/shared-config/standalone.yaml /config-server/standalone.yaml
 
 # Set the entrypoint
 ENTRYPOINT ["/config-server/config-server"]

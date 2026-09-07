@@ -31,28 +31,17 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/store"
 	"github.com/Bastien-Antigravity/config-server/src/telegram"
 
-	toolbox_config "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
+	toolbox_bootstrap "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/bootstrap"
 	toolbox_lifecycle "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/lifecycle"
 	toolbox_utils "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/utils"
-	unilog "github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
-	unilog_config "github.com/Bastien-Antigravity/universal-logger/src/config"
 )
 
 // -----------------------------------------------------------------------------
 
 func main() {
-	// 1. Initialize Toolbox Config (which handles name/IP resolution)
-	appConfig, err := toolbox_config.LoadConfig("standalone", []string{"store"})
-	if err != nil {
-		fmt.Printf("Critical Error loading config: %v\n", err)
-		os.Exit(1)
-	}
-
-	// 2. Initialize Logger (bootstrap)
-	_, appLogger := unilog.Init("config-server", "standalone", "no_lock", "INFO", false, &unilog_config.DistConfig{Config: appConfig.Config})
+	// 1. Initialize Service via Unified Ecosystem Bootstrapper
+	appConfig, appLogger := toolbox_bootstrap.BootstrapService("config-server", "store")
 	defer appLogger.Close()
-
-	appConfig.Logger = appLogger
 
 	addr, err := appConfig.GetListenAddr("config_server")
 	if err != nil {
@@ -123,7 +112,7 @@ func main() {
 		webAddr, err := appConfig.GetListenAddr("web_interface")
 		if err != nil {
 			appLogger.Warning("Could not resolve web_interface address for OpenMFE registration: %v", err)
-			webAddr = "127.0.0.1:8080"
+			webAddr = "127.0.0.1:5000"
 		}
 		regUrl := fmt.Sprintf("http://%s/api/v1/register", webAddr)
 		mfeUrl := fmt.Sprintf("http://%s/static/js/mfe-loader.js", restAddr)
