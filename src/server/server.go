@@ -22,8 +22,9 @@ import (
 
 // clientMailbox represents a dedicated outgoing queue for a client.
 type clientMailbox struct {
-	name string
-	send chan []byte
+	name           string
+	serviceAddress string
+	send           chan []byte
 }
 
 // Server represents the Config Server.
@@ -209,12 +210,19 @@ func (s *Server) broadcastRegistry() {
 	s.listenersLock.RLock()
 	registry := make(map[string][]string)
 	var clients []string
-	for name := range s.listeners {
+	var addresses []string
+	for name, mb := range s.listeners {
 		clients = append(clients, name)
+		if mb != nil && mb.serviceAddress != "" {
+			addresses = append(addresses, fmt.Sprintf("%s=%s", name, mb.serviceAddress))
+		}
 	}
 	s.listenersLock.RUnlock()
 
 	registry["active_services"] = clients
+	if len(addresses) > 0 {
+		registry["service_addresses"] = addresses
+	}
 
 	payload, err := json.Marshal(registry)
 	if err != nil {

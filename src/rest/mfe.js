@@ -440,6 +440,9 @@ class ConfigServerMFE extends HTMLElement {
                             <div style="margin-bottom: 12px; font-size: 0.85rem; color: #4a5568;">
                                 <strong>Target Variable:</strong> <span id="edit-identifier" class="mfe-mono">section -> key</span>
                             </div>
+                            <div id="edit-secret-notice" style="display:none; margin-bottom:12px; padding:8px 12px; background:rgba(229,62,62,0.1); border:1px solid rgba(229,62,62,0.25); border-radius:6px; color:#c53030; font-size:0.8rem;">
+                                <i class="fa fa-shield"></i> <strong>Zero-Knowledge Secret:</strong> This value is an encrypted secret (<code style="font-family:inherit;">ENC(...)</code>). Secrets are never decrypted on the Config Server or Web Interface, and are decrypted only in-memory by the authorized consumer microservice.
+                            </div>
                             <div class="mfe-form-group">
                                 <label>Value</label>
                                 <textarea id="edit-value" class="mfe-form-input" required rows="4"></textarea>
@@ -628,11 +631,17 @@ class ConfigServerMFE extends HTMLElement {
                             <tbody>
                                 ${keys.map(key => {
                                     const value = this.stringifyValue(settings[key]);
+                                    const isSecret = value.startsWith('ENC(') && value.endsWith(')');
+                                    let displayContent = this.escapeHTML(value);
+                                    if (isSecret) {
+                                        const masked = value.length > 30 ? value.substring(0, 14) + '...' + value.substring(value.length - 8) : value;
+                                        displayContent = `<span style="background:rgba(229,62,62,0.12); color:#e53e3e; border:1px solid rgba(229,62,62,0.25); padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; margin-right:6px;"><i class="fa fa-lock"></i> Encrypted Secret</span><span style="color:#718096; font-size:0.8rem; font-family:var(--font-mono, monospace);">${this.escapeHTML(masked)}</span>`;
+                                    }
                                     return `
                                     <tr>
                                         <td class="mfe-mono">${this.escapeHTML(key)}</td>
                                         <td>
-                                            <div class="mfe-editable" data-section="${this.escapeAttribute(section)}" data-key="${this.escapeAttribute(key)}">${this.escapeHTML(value)}</div>
+                                            <div class="mfe-editable" data-section="${this.escapeAttribute(section)}" data-key="${this.escapeAttribute(key)}" data-val="${this.escapeAttribute(value)}">${displayContent}</div>
                                         </td>
                                         <td class="mfe-actions">
                                             <button class="mfe-btn-circle mfe-edit-btn" data-section="${this.escapeAttribute(section)}" data-key="${this.escapeAttribute(key)}" data-val="${this.escapeAttribute(value)}" title="Edit parameter">
@@ -671,11 +680,21 @@ class ConfigServerMFE extends HTMLElement {
             this.querySelector('#edit-key').value = key;
             this.querySelector('#edit-value').value = val;
             this.querySelector('#edit-identifier').innerText = `${section} -> ${key}`;
+            
+            const noticeEl = this.querySelector('#edit-secret-notice');
+            if (noticeEl) {
+                if (val && val.startsWith('ENC(') && val.endsWith(')')) {
+                    noticeEl.style.display = 'block';
+                } else {
+                    noticeEl.style.display = 'none';
+                }
+            }
+
             this.querySelector('#mfe-edit-modal').classList.add('show');
         };
 
         this.querySelectorAll('.mfe-editable').forEach(el => {
-            el.addEventListener('click', () => triggerEdit(el.dataset.section, el.dataset.key, el.innerText));
+            el.addEventListener('click', () => triggerEdit(el.dataset.section, el.dataset.key, el.dataset.val !== undefined ? el.dataset.val : el.innerText));
         });
 
         this.querySelectorAll('.mfe-edit-btn').forEach(btn => {

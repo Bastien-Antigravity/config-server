@@ -91,12 +91,13 @@ The management interfaces are designed as pluggable, decoupled adapters dependin
 5. **Persistence** marks the state as `dirty`. The background worker performs an atomic write to `config_store.json` on the next ticker cycle (5s).
 6. **Broadcaster** constructs a `BROADCAST_SYNC` message and pushes it into each client's mailbox.
 
-### Client Handshake Flow
-1. **Client** connects.
-2. **Safe-Socket** performs internal handshake (version/identity exchange).
-3. **Server** validates the identity and extracts the host (stripping dynamic ports).
-4. **Server** registers a new `clientMailbox` in the `listeners` map.
-5. **Server** enters the `ReadMessage()` loop.
+### Client Handshake & Auto-Discovery Flow
+1. **Client** connects using SafeSocket (with `auto-hello`, `tcp-hello`, or `tls-hello`).
+2. **Safe-Socket** executes the handshake exchange (`HelloMsg`).
+3. **Server** validates identity (`FromName`) and captures the advertised inbound service address (`FromAddress`).
+4. **Server** registers a new `clientMailbox` containing `name` and `serviceAddress`.
+5. **Server** dispatches `BROADCAST_REGISTRY` containing both active services and dynamic service addresses (`service_addresses: ["name=address"]`).
+6. **Server** enters the `ReadMessage()` loop.
 
 ## Dependencies
 

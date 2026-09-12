@@ -26,16 +26,17 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	}
 
 	name, _ := identity.FromName()
-	address, _ := identity.FromAddress()
+	rawAddress, _ := identity.FromAddress()
 
 	// Stable Identity Resolution: Strip port from address if present
-	host, _, err := net.SplitHostPort(address)
+	host, _, err := net.SplitHostPort(rawAddress)
+	address := rawAddress
 	if err == nil {
 		address = host
 	}
 	clientName := fmt.Sprintf("%s-%s", name, address)
 
-	s.Logger.Info(fmt.Sprintf("Client identified: %s", clientName))
+	s.Logger.Info(fmt.Sprintf("Client identified: %s (advertised: %s)", clientName, rawAddress))
 
 	// Set a reasonable idle timeout to clean up zombie connections.
 	// 10 minutes is a safe balance for configuration synchronization.
@@ -43,8 +44,9 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 
 	// Initialize Mailbox (tight buffer of 3 messages)
 	mailbox := &clientMailbox{
-		name: clientName,
-		send: make(chan []byte, 3),
+		name:           clientName,
+		serviceAddress: rawAddress,
+		send:           make(chan []byte, 3),
 	}
 
 	s.addListener(clientName, mailbox)
