@@ -3,9 +3,9 @@ module github.com/Bastien-Antigravity/config-server
 go 1.25.4
 
 require (
-	github.com/Bastien-Antigravity/distributed-config v0.0.1
+	github.com/Bastien-Antigravity/distributed-config v1.9.922
 	github.com/Bastien-Antigravity/microservice-toolbox v0.0.1
-	github.com/Bastien-Antigravity/safe-socket v0.0.1
+	github.com/Bastien-Antigravity/safe-socket v1.8.2
 	github.com/Bastien-Antigravity/universal-logger v0.0.1
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
@@ -25,14 +25,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-
-
-
-
 replace (
-	github.com/Bastien-Antigravity/microservice-toolbox => ../microservice-toolbox
 	github.com/Bastien-Antigravity/distributed-config => ../distributed-config
+	github.com/Bastien-Antigravity/flexible-logger => ../flexible-logger
+	github.com/Bastien-Antigravity/microservice-toolbox => ../microservice-toolbox
 	github.com/Bastien-Antigravity/safe-socket => ../safe-socket
 	github.com/Bastien-Antigravity/universal-logger => ../universal-logger
-	github.com/Bastien-Antigravity/flexible-logger => ../flexible-logger
 )
