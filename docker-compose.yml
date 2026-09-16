@@ -2,16 +2,16 @@ services:
   # --- Infrastructure ---
   config-server:
     build:
-      context: ..
-      dockerfile: config-server/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     image: ghcr.io/bastien-antigravity/config-server:${TAG:-latest}
     container_name: config-server
     restart: unless-stopped
     ports:
       - "${CF_IP:-127.0.0.1}:${CF_PORT:-3306}:${CF_PORT:-3306}"
+      - "${CF_IP:-127.0.0.1}:${CF_GRPC_PORT:-3307}:${CF_GRPC_PORT:-3307}"
       - "${CF_IP:-127.0.0.1}:${CF_REST_PORT:-3308}:${CF_REST_PORT:-3308}"
     volumes:
-      # If the service needs to read/write config files, mount a volume
       - ./config:/config
     networks:
       - teleremote-network
