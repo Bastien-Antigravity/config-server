@@ -1,5 +1,22 @@
 package core
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Decodes incoming Protobuf ConfigMsg frames, executes the corresponding
+// configuration command against Store and PersistenceManager, and returns response frames.
+//
+// DATA FLOW:
+// 1. Input: Byte slice containing serialized Protobuf ConfigMsg from client socket.
+// 2. Logic: Dispatches commands (GET_SYNC, FULL_REFRESH, PUT_SYNC), applies atomic updates,
+//    and asynchronously triggers broadcast and persistence callbacks.
+// 3. Output: Response ConfigMsg pointer or error.
+//
+// KEY PARAMETERS:
+// - data: Raw binary frame payload.
+// - s: Atomic in-memory Store.
+// - pm: Atomic JSON PersistenceManager.
+// =============================================================================
+
 import (
 	"encoding/json"
 	"fmt"
@@ -12,10 +29,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// -----------------------------------------------------------------------------
+
 // ProcessRequest handles the business logic for incoming configuration requests.
 // It returns a response message to be sent back to the client.
 // It may also trigger a broadcast and persistence via the provided callbacks.
-// -----------------------------------------------------------------------------
 func ProcessRequest(data []byte, s *store.Store, pm *store.PersistenceManager, broadcast func(config.ConfigMsg_Cmd, []byte), triggerSave func()) (*config.ConfigMsg, error) {
 	req := &config.ConfigMsg{}
 	if err := proto.Unmarshal(data, req); err != nil {

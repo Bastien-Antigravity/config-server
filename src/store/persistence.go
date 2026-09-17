@@ -1,5 +1,21 @@
 package store
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Persists configuration state to disk and restores it upon startup, ensuring
+// fault tolerance through atomic file creation, sync, and rename semantics.
+//
+// DATA FLOW:
+// 1. Input: ConfigMap to serialize to JSON, or filesystem path on startup.
+// 2. Logic: Reads from disk on Load; writes to a temporary file, calls sync(),
+//    and atomically renames to target on Save.
+// 3. Output: Loaded ConfigMap on boot, or nil error upon safe disk commit.
+//
+// KEY PARAMETERS:
+// - filePath: Target configuration store JSON path (e.g. config_store.json).
+// - PersistenceManager: Mutex-guarded atomic disk persistence worker.
+// =============================================================================
+
 import (
 	"encoding/json"
 	"fmt"
@@ -9,6 +25,8 @@ import (
 
 	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
+
+// -----------------------------------------------------------------------------
 
 // PersistenceManager handles saving and loading the configuration from disk.
 type PersistenceManager struct {

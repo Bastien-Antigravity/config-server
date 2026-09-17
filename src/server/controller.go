@@ -1,5 +1,21 @@
 package server
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Implements the core.ConfigController interface on Server, providing atomic
+// configuration accessors, mutators, dynamic listing, and health status reporting.
+//
+// DATA FLOW:
+// 1. Input: Management requests from REST, gRPC, and Telegram adapters.
+// 2. Logic: Updates the in-memory Store with Copy-On-Write semantics, triggers
+//    dirty persistence, and broadcasts change notifications.
+// 3. Output: Returns configuration values, status metadata, and error codes.
+//
+// KEY PARAMETERS:
+// - Server: Core stateful daemon holding store and listeners.
+// - StatusInfo: Runtime telemetry structure reporting service status and connected clients.
+// =============================================================================
+
 import (
 	"context"
 	"fmt"
@@ -8,6 +24,8 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/core"
 	"github.com/Bastien-Antigravity/config-server/src/store"
 )
+
+// -----------------------------------------------------------------------------
 
 // Ensure *Server implements core.ConfigController
 var _ core.ConfigController = (*Server)(nil)
@@ -126,7 +144,7 @@ func (s *Server) GetStatus(ctx context.Context) (core.StatusInfo, error) {
 	return core.StatusInfo{
 		Healthy:       true,
 		Status:        "Operational",
-		Version:       "1.2.0",
+		Version:       "0.0.1",
 		Timestamp:     time.Now().Unix(),
 		ActiveClients: s.GetActiveClients(),
 		ClientNames:   s.GetClientNames(),

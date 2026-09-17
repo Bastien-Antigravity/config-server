@@ -26,11 +26,11 @@ Config Server is a lightweight, high-performance configuration management servic
 - **Standalone Mode**: Can run with local configuration or integrate into a distributed system.
  
 ## 🛡️ Feature Specs & Governance (BDD)
-The behavior of this microservice is governed by strict specifications in the ****:
-- **Handshake & Identity**: 
-- **Atomic State Swap**: 
-- **Broadcast Propagation**: 
-- **Persistence Safety**: 
+The behavior of this microservice is governed by strict specifications in the **Obsidian Brain**:
+- **Handshake & Identity**: [FEAT-001: Mutual Identity Handshake](../obsidian-brain/02-Business-BDD/02-Behavior-Specs/config-server/FEAT-001-Handshake-Identity.md)
+- **Atomic State Swap**: [FEAT-002: Atomic State Swap](../obsidian-brain/02-Business-BDD/02-Behavior-Specs/config-server/FEAT-002-Atomic-State-Swap.md)
+- **Broadcast Propagation**: [FEAT-003: Broadcast Propagation](../obsidian-brain/02-Business-BDD/02-Behavior-Specs/config-server/FEAT-003-Broadcast-Propagation.md)
+- **Persistence Safety**: [FEAT-004: Configuration Persistence & Recovery](../obsidian-brain/02-Business-BDD/02-Behavior-Specs/config-server/FEAT-004-Persistence-Safety.md)
 
 ## Architecture
 
@@ -58,20 +58,24 @@ The project is structured into three main layers:
 
 2. Build the server:
    ```bash
-   go build -o config-server cmd/config-server/main.go
+   go build -o bin/config-server ./cmd/config-server
    ```
 
 ### Usage
 
-Run the server using the compiled executable. Note that network capabilities (port/IP) are determined by the `distributed-config` setup, but defaults can be overridden or files specified via flags.
+Run the server using the compiled executable. Network capabilities (ports, IPs) are resolved dynamically via `microservice-toolbox` and `distributed-config` (`standalone.yaml -> ../docker-deployment/modes/local/config/native.yaml`):
+
+- **TCP Sync Protocol**: Port `3306` (`appConfig.GetListenAddr("config_server")`) — framed TCP distribution via `safe-socket`
+- **gRPC Shadow Port**: Port `3307` (`appConfig.GetGRPCAddr("config_server")`) — management and remote sync
+- **REST & OpenMFE**: Port `3308` (`appConfig.GetRESTAddr("config_server")`) — HTTP REST endpoints and OpenMFE micro-frontend host
 
 ```bash
-./config-server -port 1026 -config config_store.json
-```
+# Run locally with default persistence store (config_store.json)
+./bin/config-server
 
-**Flags:**
-- `-port`: Server listening port (default: "1026").
-- `-config`: Path to the persistent configuration file (default: "config_store.json").
+# Run with custom persistence store path
+./bin/config-server --store /path/to/custom_store.json
+```
 
 ## API Protocol
 

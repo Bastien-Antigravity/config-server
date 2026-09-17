@@ -1,5 +1,19 @@
 package store
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Unit tests for PersistenceManager, verifying atomic file saving, JSON formatting,
+// directory creation, and recovery from non-existent or corrupted files.
+//
+// DATA FLOW:
+// 1. Input: Sample ConfigMap written to temporary directories.
+// 2. Logic: Invokes Save() and Load() methods, comparing original vs loaded structures.
+// 3. Output: Validates error conditions and payload equality.
+//
+// KEY PARAMETERS:
+// - mockLogger: Silent mock implementing universal-logger interfaces.Logger.
+// =============================================================================
+
 import (
 	"os"
 	"path/filepath"
@@ -7,6 +21,8 @@ import (
 
 	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
+
+// -----------------------------------------------------------------------------
 
 type mockLogger struct {
 	interfaces.Logger

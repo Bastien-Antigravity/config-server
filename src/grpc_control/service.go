@@ -1,5 +1,20 @@
 package grpc_control
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Implements ConfigControlServiceServer gRPC methods, translating Protobuf RPC
+// requests into core.ConfigController invocations.
+//
+// DATA FLOW:
+// 1. Input: gRPC request objects (GetConfigRequest, SetConfigRequest, etc.).
+// 2. Logic: Delegates to core.ConfigController for querying, mutating, reloading, and persisting.
+// 3. Output: Protobuf response messages (ControlResponse, GetConfigResponse, etc.).
+//
+// KEY PARAMETERS:
+// - ControlServiceImpl: gRPC service handler struct.
+// - controller: core.ConfigController business logic facade.
+// =============================================================================
+
 import (
 	"context"
 	"encoding/json"

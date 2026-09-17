@@ -9,16 +9,18 @@ version:
 
 build:
 	@echo "Building repository (version $(VERSION))..."
-	@if [ -f "go.mod" ]; then go build ./... || true; fi
-	@if [ -f "Cargo.toml" ]; then cargo build --release || true; fi
-	@if [ -f "setup.py" ] || [ -f "pyproject.toml" ]; then python3 -m build || true; fi
+	@if [ -f "go.mod" ]; then \
+		mkdir -p bin && \
+		go build -o bin/config-server ./cmd/config-server && \
+		go build ./...; \
+	fi
+	@if [ -f "Cargo.toml" ]; then cargo build --release; fi
 
 test:
 	@echo "Running tests (version $(VERSION))..."
-	@if [ -f "go.mod" ]; then go test ./... 2>/dev/null || go test ./src/... 2>/dev/null || true; fi
-	@if [ -f "Cargo.toml" ]; then cargo test 2>/dev/null || true; fi
-	@if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then pytest 2>/dev/null || true; fi
+	@if [ -f "go.mod" ]; then go test -v ./...; fi
+	@if [ -f "Cargo.toml" ]; then cargo test; fi
 
 clean:
 	@echo "Cleaning build artifacts..."
-	@rm -rf dist build *.egg-info target/
+	@rm -rf dist build *.egg-info target/ bin/

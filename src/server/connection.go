@@ -1,5 +1,21 @@
 package server
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Manages the connection lifecycle for a single authenticated TCP client,
+// coordinating framed message reading, request dispatching, and asynchronous write buffering.
+//
+// DATA FLOW:
+// 1. Input: TransportConnection accepted by the SafeSocket listener.
+// 2. Logic: Extracts handshake identity, registers a dedicated client mailbox,
+//    dispatches protobuf ConfigMsg payloads to core.ProcessRequest, and handles responses.
+// 3. Output: Writes serialized response frames and broadcast updates to the socket.
+//
+// KEY PARAMETERS:
+// - sock: SafeSocket transport connection with framing and handshake support.
+// - mailbox: Per-client channel buffer preventing slow readers from stalling the server.
+// =============================================================================
+
 import (
 	"fmt"
 	"io"
@@ -15,6 +31,7 @@ import (
 )
 
 // -----------------------------------------------------------------------------
+
 func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	defer sock.Close()
 
@@ -36,7 +53,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	}
 	clientName := fmt.Sprintf("%s-%s", name, address)
 
-	s.Logger.Info(fmt.Sprintf("Client identified: %s (advertised: %s)", clientName, rawAddress))
+	s.Logger.Info("Client identified: %s (advertised: %s)", clientName, rawAddress)
 
 	// Set a reasonable idle timeout to clean up zombie connections.
 	// 10 minutes is a safe balance for configuration synchronization.
@@ -70,7 +87,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 		data, err := sock.ReadMessage()
 		if err != nil {
 			if err != io.EOF {
-				s.Logger.Error(fmt.Sprintf("Read error from %s: %v", clientName, err))
+				s.Logger.Error("Read error from %s: %v", clientName, err)
 			}
 			return
 		}
@@ -79,7 +96,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 		s.Logger.Info("Processing request from %s (data len: %d)", clientName, len(data))
 		response, err := core.ProcessRequest(data, s.Store, s.Persistence, s.broadcastUpdate, s.TriggerSave)
 		if err != nil {
-			s.Logger.Error(fmt.Sprintf("Error processing request from %s: %v", clientName, err))
+			s.Logger.Error("Error processing request from %s: %v", clientName, err)
 			return
 		}
 
@@ -87,7 +104,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 			s.Logger.Info("Sending response %v to %s", response.Command, clientName)
 			bytes, err := proto.Marshal(response)
 			if err != nil {
-				s.Logger.Error(fmt.Sprintf("Failed to marshal response: %v", err))
+				s.Logger.Error("Failed to marshal response: %v", err)
 				return
 			}
 

@@ -1,10 +1,26 @@
 package server
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Implements the central Config Server TCP network daemon, managing client
+// mailboxes, broadcast channels, registry notifications, and background state saves.
+//
+// DATA FLOW:
+// 1. Input: Incoming TCP connections authenticated via SafeSocket tcp-hello handshake.
+// 2. Logic: Enqueues outbound configuration diffs into non-blocking client mailboxes,
+//    broadcasts dynamic service registries, and periodically flushes dirty store state.
+// 3. Output: Outgoing TCP frames carrying protobuf ConfigMsg payloads.
+//
+// KEY PARAMETERS:
+// - AppConfig: Ecosystem configuration facade resolving dynamic listen addresses.
+// - Store: In-memory Copy-On-Write store holding configuration tree.
+// - Persistence: Atomic JSON file persistence manager.
+// =============================================================================
+
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,12 +36,16 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// -----------------------------------------------------------------------------
+
 // clientMailbox represents a dedicated outgoing queue for a client.
 type clientMailbox struct {
 	name           string
 	serviceAddress string
 	send           chan []byte
 }
+
+// -----------------------------------------------------------------------------
 
 // Server represents the Config Server.
 type Server struct {
@@ -38,7 +58,11 @@ type Server struct {
 	shutdown      chan struct{}
 	dirty         atomic.Bool
 	OnUpdate      func()
+	serverSock    factory.Socket
+	sockLock      sync.Mutex
 }
+
+// -----------------------------------------------------------------------------
 
 // NewServer creates a new Config Server.
 func NewServer(ac *utilconf.AppConfig, logger interfaces.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
@@ -62,8 +86,7 @@ func (s *Server) Start() error {
 	// Use Toolbox Smart Resolver for Binding
 	addr, err := s.AppConfig.GetListenAddr("config_server")
 	if err != nil {
-		s.Logger.Error("Failed to resolve bind address: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to resolve bind address for config_server: %w", err)
 	}
 
 	// Create a server socket using safe-socket factory
@@ -74,9 +97,20 @@ func (s *Server) Start() error {
 	}
 	serverSock, err := factory.CreateWithConfig("tcp-hello", addr, config, "server", true)
 	if err != nil {
-		return err // Wrap error in caller if needed, or return raw err
+		return err
 	}
-	defer serverSock.Close()
+	s.sockLock.Lock()
+	s.serverSock = serverSock
+	s.sockLock.Unlock()
+
+	defer func() {
+		s.sockLock.Lock()
+		if s.serverSock != nil {
+			_ = s.serverSock.Close()
+			s.serverSock = nil
+		}
+		s.sockLock.Unlock()
+	}()
 
 	s.Logger.Info("Config Server listening on " + addr)
 
@@ -95,10 +129,22 @@ func (s *Server) Start() error {
 	}
 }
 
+// -----------------------------------------------------------------------------
+
 // Stop signals the server to shutdown.
 func (s *Server) Stop() {
 	s.Logger.Info("Stopping Config Server...")
-	close(s.shutdown)
+	select {
+	case <-s.shutdown:
+	default:
+		close(s.shutdown)
+	}
+
+	s.sockLock.Lock()
+	if s.serverSock != nil {
+		_ = s.serverSock.Close()
+	}
+	s.sockLock.Unlock()
 }
 
 // -----------------------------------------------------------------------------

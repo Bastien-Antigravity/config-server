@@ -1,5 +1,18 @@
 package main
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Standalone development test server runner for isolated verification of TCP synchronization.
+//
+// DATA FLOW:
+// 1. Input: Standalone configuration profile.
+// 2. Logic: Bootstraps local test server and runs TCP protocol listener.
+// 3. Output: Operates standalone test instance.
+//
+// KEY PARAMETERS:
+// - ConfigTestServer: Diagnostic harness identifier.
+// =============================================================================
+
 import (
 	"context"
 	"fmt"
@@ -13,6 +26,8 @@ import (
 	unilog_bootstrap "github.com/Bastien-Antigravity/universal-logger/src/bootstrap"
 	unilog_config "github.com/Bastien-Antigravity/universal-logger/src/config"
 )
+
+// -----------------------------------------------------------------------------
 
 func main() {
 	// 0. Initialize Toolbox Config

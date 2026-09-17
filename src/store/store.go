@@ -1,8 +1,26 @@
 package store
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Implements the high-concurrency, thread-safe in-memory configuration store using
+// Copy-On-Write (COW) semantics protected by sync.RWMutex.
+//
+// DATA FLOW:
+// 1. Input: Direct queries or atomic transformation closures.
+// 2. Logic: Provides zero-allocation read access, creates sandbox deep copies for mutations,
+//    and atomically updates the master pointer upon successful validation.
+// 3. Output: Read-only ConfigMap snapshots or section sub-maps.
+//
+// KEY PARAMETERS:
+// - ConfigMap: Section -> Key -> Value configuration dictionary.
+// - Store: Concurrent state holder.
+// =============================================================================
+
 import (
 	"sync"
 )
+
+// -----------------------------------------------------------------------------
 
 // ConfigMap represents the configuration data structure (Section -> Key -> Value)
 type ConfigMap map[string]map[string]string

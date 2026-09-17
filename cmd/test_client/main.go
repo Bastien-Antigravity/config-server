@@ -1,10 +1,25 @@
 package main
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Standalone diagnostic client utility connecting to Config Server via distributed-config.
+//
+// DATA FLOW:
+// 1. Input: Connects to Config Server using distributed-config "production" profile.
+// 2. Logic: Retrieves LiveConfig and Common sections for inspection.
+// 3. Output: Prints active configurations to standard output.
+//
+// KEY PARAMETERS:
+// - distributed_config: Core configuration client SDK.
+// =============================================================================
+
 import (
 	"fmt"
 
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
 )
+
+// -----------------------------------------------------------------------------
 
 func main() {
 	fmt.Println("Initializing Distributed Config (Production Profile)...")

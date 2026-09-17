@@ -1,5 +1,20 @@
 package rest
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Unit tests for the REST API handler, verifying routing, CORS headers,
+// OpenMFE web asset serving, configuration mutations, and method rejection.
+//
+// DATA FLOW:
+// 1. Input: Simulated HTTP requests generated via httptest.NewRequest.
+// 2. Logic: Executes RESTHandler methods against mockControl and mockLogger.
+// 3. Output: Validates HTTP status codes, headers, and JSON body payloads.
+//
+// KEY PARAMETERS:
+// - mockControl: Mock implementation of core.ConfigController.
+// - httptest.ResponseRecorder: Records output status and payload.
+// =============================================================================
+
 import (
 	"bytes"
 	"context"
@@ -12,6 +27,8 @@ import (
 	"github.com/Bastien-Antigravity/config-server/src/store"
 	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
+
+// -----------------------------------------------------------------------------
 
 type mockLogger struct{}
 

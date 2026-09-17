@@ -1,13 +1,15 @@
 ---
-microservice: obsidian-brain
+microservice: config-server
 type: note
 status: active
 tags:
-- '#service/obsidian-brain'
+- '#service/config-server'
 - '#type/note'
 - '#state/active'
 - '#zone/3-fleet'
----# TODO: config-server
+---
+
+# TODO: config-server
 
 ## 🚨 High Priority (Governance Gaps)
 - [x] **Atomic Persistence (Purger Rule)**: Replace `os.WriteFile` with a "Write-to-Tmp & Rename" strategy to prevent file corruption during crashes (FEAT-004). (Validated with Sync and CreateTemp)

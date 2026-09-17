@@ -91,20 +91,12 @@ func main() {
 		appLogger.Critical("Failed to resolve REST address for config_server: %v", err)
 		os.Exit(1)
 	}
-	parts := strings.SplitN(restAddr, ":", 2)
-	var restPort int
-	if len(parts) != 2 {
-		appLogger.Critical("Invalid REST address format: '%s'", restAddr)
-		os.Exit(1)
-	}
-	if _, err := fmt.Sscanf(parts[1], "%d", &restPort); err != nil {
-		appLogger.Critical("Failed to parse REST port from '%s': %v", restAddr, err)
-		os.Exit(1)
-	}
 
 	restHandler := rest.NewRESTHandler(srv, appLogger)
 	go func() {
-		_ = restHandler.StartServer(restPort)
+		if err := restHandler.StartServer(restAddr); err != nil {
+			appLogger.Error("REST management server failed: %v", err)
+		}
 	}()
 
 	// Register config-server OpenMFE with web-interface dynamically
@@ -161,7 +153,10 @@ func main() {
 	lm.Register("StopServer", func() error {
 		srv.Stop()
 		if grpcSrv != nil {
-			grpcSrv.Stop(context.Background())
+			_ = grpcSrv.Stop(context.Background())
+		}
+		if restHandler != nil {
+			_ = restHandler.Stop(context.Background())
 		}
 		return nil
 	})

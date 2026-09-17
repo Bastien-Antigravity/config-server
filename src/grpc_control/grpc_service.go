@@ -1,5 +1,20 @@
 package grpc_control
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Manages the gRPC server lifecycle on the Shadow Port (3307), registering
+// ConfigControlServiceServer and health checks for remote management.
+//
+// DATA FLOW:
+// 1. Input: TCP listener bound to AppConfig's gRPC shadow address.
+// 2. Logic: Registers ControlServiceImpl and gRPC health server, manages graceful shutdown.
+// 3. Output: Binary gRPC stream endpoints serving configuration RPCs.
+//
+// KEY PARAMETERS:
+// - GRPCService: Lifecycle manager wrapping *grpc.Server and net.Listener.
+// - ControlService: Implementation of ConfigControlServiceServer.
+// =============================================================================
+
 import (
 	"context"
 	"fmt"

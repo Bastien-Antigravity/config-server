@@ -1,5 +1,21 @@
 package telegram
 
+// =============================================================================
+// ESSENTIAL PROCESS:
+// Binds config-server management operations to the tele-remote interactive Telegram
+// bot interface, publishing hierarchical menus for browsing, editing, and persisting state.
+//
+// DATA FLOW:
+// 1. Input: Tele-Remote gRPC connection and dynamic configuration updates from Server.
+// 2. Logic: Constructs Telegram UI actions for storage operations and live configuration tweaking,
+//    registering callback handlers with TeleClient.
+// 3. Output: Interactive menu frames and status updates sent to tele-remote.
+//
+// KEY PARAMETERS:
+// - MenuManager: Interactive menu builder and callback coordinator.
+// - TeleClient: gRPC streaming client connecting to tele-remote daemon.
+// =============================================================================
+
 import (
 	"context"
 	"fmt"
@@ -11,6 +27,8 @@ import (
 	toolbox_teleclient "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/teleremote"
 	unilog_ifaces "github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
+
+// -----------------------------------------------------------------------------
 
 // MenuManager orchestrates the rebuild operations of the Telegram interactive menus.
 type MenuManager struct {
