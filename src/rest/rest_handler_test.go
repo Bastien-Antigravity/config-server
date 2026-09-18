@@ -46,10 +46,12 @@ func (m *mockLogger) Report(format string, args ...any)                         
 func (m *mockLogger) GetNotifQueue() <-chan *interfaces.NotifMessage             { return nil }
 func (m *mockLogger) SetLocalNotifQueue(notifChan chan *interfaces.NotifMessage) {}
 func (m *mockLogger) Log(level interfaces.Level, format string, args ...any)     {}
+func (m *mockLogger) LogWithCaller(level interfaces.Level, msg, file, line, function, module string) {}
 func (m *mockLogger) SetLevel(level interfaces.Level)                            {}
 func (m *mockLogger) GetLevel() interfaces.Level                                 { return interfaces.LevelInfo }
 func (m *mockLogger) SetCallerSkip(skip int)                                     {}
 func (m *mockLogger) SetMetadata(metadata map[string]string)                     {}
+func (m *mockLogger) GetMetadata() map[string]string                             { return nil }
 func (m *mockLogger) AddMetadata(key, value string)                              {}
 func (m *mockLogger) Close()                                                     {}
 
