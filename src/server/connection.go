@@ -19,7 +19,6 @@ package server
 import (
 	"fmt"
 	"io"
-	"net"
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
@@ -45,13 +44,11 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	name, _ := identity.FromName()
 	rawAddress, _ := identity.FromAddress()
 
-	// Stable Identity Resolution: Strip port from address if present
-	host, _, err := net.SplitHostPort(rawAddress)
-	address := rawAddress
-	if err == nil {
-		address = host
+	endpoint := rawAddress
+	if endpoint == "" {
+		endpoint = sock.RemoteAddr().String()
 	}
-	clientName := fmt.Sprintf("%s-%s", name, address)
+	clientName := fmt.Sprintf("%s-%s", name, endpoint)
 
 	s.Logger.Info("Client identified: %s (advertised: %s)", clientName, rawAddress)
 
@@ -74,11 +71,10 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 		for msg := range mailbox.send {
 			if _, err := sock.Write(msg); err != nil {
 				s.Logger.Error("Write failed to %s: %v", clientName, err)
+				_ = sock.Close()
 				break
 			}
 		}
-		sock.Close()
-		s.removeListener(clientName, mailbox)
 	}()
 
 	// 3. Reader Loop (Main Goroutine)
@@ -94,7 +90,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 
 		// Handle ConfigMsg
 		s.Logger.Info("Processing request from %s (data len: %d)", clientName, len(data))
-		response, err := core.ProcessRequest(data, s.Store, s.Persistence, s.broadcastUpdate, s.TriggerSave)
+		response, err := core.ProcessRequest(data, s.Store, s.broadcastUpdate, s.TriggerSave)
 		if err != nil {
 			s.Logger.Error("Error processing request from %s: %v", clientName, err)
 			return

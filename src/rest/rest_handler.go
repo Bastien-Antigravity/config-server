@@ -326,10 +326,7 @@ func (h *RESTHandler) StartServer(addr string) error {
 	return err
 }
 
-// StartServerPort is a convenience helper that accepts an integer port.
-func (h *RESTHandler) StartServerPort(port int) error {
-	return h.StartServer(fmt.Sprintf(":%d", port))
-}
+// -----------------------------------------------------------------------------
 
 // Stop gracefully shuts down the HTTP server.
 func (h *RESTHandler) Stop(ctx context.Context) error {

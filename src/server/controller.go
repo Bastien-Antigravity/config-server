@@ -19,6 +19,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
@@ -30,7 +32,9 @@ import (
 // Ensure *Server implements core.ConfigController
 var _ core.ConfigController = (*Server)(nil)
 
-// GetConfig returns a specific configuration value.
+// -----------------------------------------------------------------------------
+
+// GetConfig returns a specific configuration value from the dynamic store.
 func (s *Server) GetConfig(ctx context.Context, section, key string) (string, bool, error) {
 	s.Logger.Debug("Controller : GetConfig request for [%s] %s", section, key)
 
@@ -42,6 +46,8 @@ func (s *Server) GetConfig(ctx context.Context, section, key string) (string, bo
 	}
 	return "", false, nil
 }
+
+// -----------------------------------------------------------------------------
 
 // SetConfig updates a configuration value atomically and broadcasts the change.
 func (s *Server) SetConfig(ctx context.Context, section, key, value string) error {
@@ -63,6 +69,8 @@ func (s *Server) SetConfig(ctx context.Context, section, key, value string) erro
 	return nil
 }
 
+// -----------------------------------------------------------------------------
+
 // DeleteConfig deletes a configuration key atomically and broadcasts the change.
 func (s *Server) DeleteConfig(ctx context.Context, section, key string) error {
 	s.Logger.Info("Controller : DeleteConfig request for [%s] %s", section, key)
@@ -81,6 +89,8 @@ func (s *Server) DeleteConfig(ctx context.Context, section, key string) error {
 	s.BroadcastConfig()
 	return nil
 }
+
+// -----------------------------------------------------------------------------
 
 // ListConfig returns the full current configuration state, merging static base configurations with dynamic overrides.
 func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
@@ -131,11 +141,32 @@ func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
 	return merged, nil
 }
 
+// -----------------------------------------------------------------------------
+
 // PersistConfig manually triggers a save of the configuration state.
 func (s *Server) PersistConfig(ctx context.Context) error {
 	s.Logger.Info("Controller : PersistConfig request")
 	s.TriggerSave()
 	return nil
+}
+
+// -----------------------------------------------------------------------------
+
+// ServerVersion defines the release version reported in status telemetry.
+// It can be dynamically injected at build-time via:
+// -ldflags="-X 'github.com/Bastien-Antigravity/config-server/src/server.ServerVersion=$(VERSION)'"
+var ServerVersion = "0.0.1"
+
+func init() {
+	for _, p := range []string{"VERSION.txt", "../VERSION.txt", "../../VERSION.txt"} {
+		if data, err := os.ReadFile(p); err == nil {
+			v := strings.TrimSpace(string(data))
+			if v != "" {
+				ServerVersion = v
+				break
+			}
+		}
+	}
 }
 
 // GetStatus returns the health status, active client counts, and client names.
@@ -144,7 +175,7 @@ func (s *Server) GetStatus(ctx context.Context) (core.StatusInfo, error) {
 	return core.StatusInfo{
 		Healthy:       true,
 		Status:        "Operational",
-		Version:       "0.0.1",
+		Version:       ServerVersion,
 		Timestamp:     time.Now().Unix(),
 		ActiveClients: s.GetActiveClients(),
 		ClientNames:   s.GetClientNames(),

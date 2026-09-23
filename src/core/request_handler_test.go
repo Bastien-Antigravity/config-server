@@ -48,7 +48,7 @@ func TestProcessRequest_GetSyncAndFullRefresh(t *testing.T) {
 			t.Fatalf("failed to marshal request: %v", err)
 		}
 
-		resp, err := ProcessRequest(data, s, nil, nil, nil)
+		resp, err := ProcessRequest(data, s, nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -105,7 +105,7 @@ func TestProcessRequest_PutSync_Success(t *testing.T) {
 		saveTriggered = true
 	}
 
-	resp, err := ProcessRequest(data, s, nil, broadcastFn, triggerSaveFn)
+	resp, err := ProcessRequest(data, s, broadcastFn, triggerSaveFn)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestProcessRequest_PutSync_InvalidJSON(t *testing.T) {
 	}
 	data, _ := proto.Marshal(req)
 
-	resp, err := ProcessRequest(data, s, nil, nil, nil)
+	resp, err := ProcessRequest(data, s, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestProcessRequest_UnknownCommand(t *testing.T) {
 	}
 	data, _ := proto.Marshal(req)
 
-	_, err := ProcessRequest(data, s, nil, nil, nil)
+	_, err := ProcessRequest(data, s, nil, nil)
 	if err == nil {
 		t.Fatalf("expected error for unknown command")
 	}
@@ -175,7 +175,7 @@ func TestProcessRequest_UnknownCommand(t *testing.T) {
 func TestProcessRequest_MalformedProtobuf(t *testing.T) {
 	s := store.NewStore()
 
-	_, err := ProcessRequest([]byte("not-a-protobuf"), s, nil, nil, nil)
+	_, err := ProcessRequest([]byte("not-a-protobuf"), s, nil, nil)
 	if err == nil {
 		t.Fatalf("expected protobuf unmarshal error")
 	}

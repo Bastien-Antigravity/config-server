@@ -1,9 +1,24 @@
+// =============================================================================
+// ESSENTIAL PROCESS:
+// OpenMFE web component for config-server, encapsulating dynamic configuration
+// inspection, live updates, baseline reloading, and state persistence in Shadow DOM.
+//
+// DATA FLOW:
+// 1. Input: Configuration state fetched via HTTP from /api/v1/config/ endpoints.
+// 2. Logic: Renders responsive dashboard, interactive tables, and update modals.
+// 3. Output: Dispatches HTTP REST mutations to config-server daemon.
+//
+// KEY PARAMETERS:
+// - ConfigServerMFE: Isolated custom HTMLElement registered as config-server-mfe.
+// =============================================================================
+
 class ConfigServerMFE extends HTMLElement {
     constructor() {
         super();
         this.baseUrl = '';
         this.statusData = { healthy: false, status: 'Offline', version: 'N/A', timestamp: 0, active_clients: 0, client_names: [] };
         this.configMap = {};
+        this.root = this.attachShadow({ mode: "open" });
     }
 
     async connectedCallback() {
@@ -13,7 +28,8 @@ class ConfigServerMFE extends HTMLElement {
     }
 
     renderSkeleton() {
-        this.innerHTML = `
+        this.root.innerHTML = `
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
             <style>
                 .mfe-container {
                     font-family: var(--font-sans, 'Inter', sans-serif);
@@ -401,7 +417,7 @@ class ConfigServerMFE extends HTMLElement {
                 <div class="mfe-modal-content">
                     <div class="mfe-modal-header mfe-modal-header-add">
                         <span>Create Configuration Variable</span>
-                        <span class="mfe-close-btn" onclick="document.getElementById('mfe-add-modal').classList.remove('show')">&times;</span>
+                        <span class="mfe-close-btn mfe-close-add-modal">&times;</span>
                     </div>
                     <form id="mfe-add-form">
                         <div class="mfe-modal-body">
@@ -419,7 +435,7 @@ class ConfigServerMFE extends HTMLElement {
                             </div>
                         </div>
                         <div class="mfe-modal-footer">
-                            <button type="button" class="mfe-btn mfe-btn-secondary" onclick="document.getElementById('mfe-add-modal').classList.remove('show')">Cancel</button>
+                            <button type="button" class="mfe-btn mfe-btn-secondary mfe-close-add-modal">Cancel</button>
                             <button type="submit" class="mfe-btn mfe-btn-primary">Save Parameter</button>
                         </div>
                     </form>
@@ -431,7 +447,7 @@ class ConfigServerMFE extends HTMLElement {
                 <div class="mfe-modal-content">
                     <div class="mfe-modal-header mfe-modal-header-edit">
                         <span>Edit Parameter</span>
-                        <span class="mfe-close-btn" onclick="document.getElementById('mfe-edit-modal').classList.remove('show')">&times;</span>
+                        <span class="mfe-close-btn mfe-close-edit-modal">&times;</span>
                     </div>
                     <form id="mfe-edit-form">
                         <div class="mfe-modal-body">
@@ -449,7 +465,7 @@ class ConfigServerMFE extends HTMLElement {
                             </div>
                         </div>
                         <div class="mfe-modal-footer">
-                            <button type="button" class="mfe-btn mfe-btn-secondary" onclick="document.getElementById('mfe-edit-modal').classList.remove('show')">Cancel</button>
+                            <button type="button" class="mfe-btn mfe-btn-secondary mfe-close-edit-modal">Cancel</button>
                             <button type="submit" class="mfe-btn mfe-btn-primary">Update Parameter</button>
                         </div>
                     </form>
@@ -461,31 +477,37 @@ class ConfigServerMFE extends HTMLElement {
     }
 
     bindEvents() {
-        this.querySelector('#mfe-reload-btn').addEventListener('click', () => this.reloadBaseline());
-        this.querySelector('#mfe-persist-btn').addEventListener('click', () => this.persistState());
-        this.querySelector('#mfe-add-entry-btn').addEventListener('click', () => {
-            this.querySelector('#mfe-add-form').reset();
-            this.querySelector('#mfe-add-modal').classList.add('show');
+        this.root.querySelectorAll('.mfe-close-add-modal').forEach(el => {
+            el.addEventListener('click', () => this.root.querySelector('#mfe-add-modal').classList.remove('show'));
+        });
+        this.root.querySelectorAll('.mfe-close-edit-modal').forEach(el => {
+            el.addEventListener('click', () => this.root.querySelector('#mfe-edit-modal').classList.remove('show'));
+        });
+        this.root.querySelector('#mfe-reload-btn').addEventListener('click', () => this.reloadBaseline());
+        this.root.querySelector('#mfe-persist-btn').addEventListener('click', () => this.persistState());
+        this.root.querySelector('#mfe-add-entry-btn').addEventListener('click', () => {
+            this.root.querySelector('#mfe-add-form').reset();
+            this.root.querySelector('#mfe-add-modal').classList.add('show');
         });
 
-        this.querySelector('#mfe-add-form').addEventListener('submit', (e) => {
+        this.root.querySelector('#mfe-add-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.submitConfig(
-                this.querySelector('#add-section').value,
-                this.querySelector('#add-key').value,
-                this.querySelector('#add-value').value
+                this.root.querySelector('#add-section').value,
+                this.root.querySelector('#add-key').value,
+                this.root.querySelector('#add-value').value
             );
-            this.querySelector('#mfe-add-modal').classList.remove('show');
+            this.root.querySelector('#mfe-add-modal').classList.remove('show');
         });
 
-        this.querySelector('#mfe-edit-form').addEventListener('submit', (e) => {
+        this.root.querySelector('#mfe-edit-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.submitConfig(
-                this.querySelector('#edit-section').value,
-                this.querySelector('#edit-key').value,
-                this.querySelector('#edit-value').value
+                this.root.querySelector('#edit-section').value,
+                this.root.querySelector('#edit-key').value,
+                this.root.querySelector('#edit-value').value
             );
-            this.querySelector('#mfe-edit-modal').classList.remove('show');
+            this.root.querySelector('#mfe-edit-modal').classList.remove('show');
         });
     }
 
@@ -511,10 +533,10 @@ class ConfigServerMFE extends HTMLElement {
     }
 
     displayStatus() {
-        const dot = this.querySelector('#mfe-status-dot');
-        const text = this.querySelector('#mfe-status-text');
-        const details = this.querySelector('#mfe-status-details');
-        const clientsContainer = this.querySelector('#mfe-clients-container');
+        const dot = this.root.querySelector('#mfe-status-dot');
+        const text = this.root.querySelector('#mfe-status-text');
+        const details = this.root.querySelector('#mfe-status-details');
+        const clientsContainer = this.root.querySelector('#mfe-clients-container');
 
         if (dot && text) {
             if (this.statusData.healthy) {
@@ -553,7 +575,7 @@ class ConfigServerMFE extends HTMLElement {
             }
         } catch (err) {
             console.error('Failed to load configs:', err);
-            this.querySelector('#mfe-accordion-list').innerHTML = `
+            this.root.querySelector('#mfe-accordion-list').innerHTML = `
                 <div style="padding:40px; text-align:center; color:#e53e3e;">
                     <i class="fa fa-exclamation-triangle fa-2x"></i><br>Failed to retrieve config parameters from config-server: ${this.escapeHTML(err.message)}
                 </div>
@@ -590,7 +612,7 @@ class ConfigServerMFE extends HTMLElement {
     }
 
     displayConfigs() {
-        const container = this.querySelector('#mfe-accordion-list');
+        const container = this.root.querySelector('#mfe-accordion-list');
         container.innerHTML = '';
 
         const sections = Object.keys(this.configMap);
@@ -660,10 +682,10 @@ class ConfigServerMFE extends HTMLElement {
         });
 
         // Bind accordion collapses
-        this.querySelectorAll('.mfe-section-header').forEach(header => {
+        this.root.querySelectorAll('.mfe-section-header').forEach(header => {
             header.addEventListener('click', () => {
                 const targetId = header.dataset.target;
-                const content = this.querySelector(`#${targetId}`);
+                const content = this.root.querySelector(`#${targetId}`);
                 if (content.style.display === 'none') {
                     content.style.display = 'block';
                     header.querySelector('.fa-chevron-down').style.transform = 'rotate(0deg)';
@@ -676,12 +698,12 @@ class ConfigServerMFE extends HTMLElement {
 
         // Bind inline edit clicks and pencil buttons
         const triggerEdit = (section, key, val) => {
-            this.querySelector('#edit-section').value = section;
-            this.querySelector('#edit-key').value = key;
-            this.querySelector('#edit-value').value = val;
-            this.querySelector('#edit-identifier').innerText = `${section} -> ${key}`;
+            this.root.querySelector('#edit-section').value = section;
+            this.root.querySelector('#edit-key').value = key;
+            this.root.querySelector('#edit-value').value = val;
+            this.root.querySelector('#edit-identifier').innerText = `${section} -> ${key}`;
             
-            const noticeEl = this.querySelector('#edit-secret-notice');
+            const noticeEl = this.root.querySelector('#edit-secret-notice');
             if (noticeEl) {
                 if (val && val.startsWith('ENC(') && val.endsWith(')')) {
                     noticeEl.style.display = 'block';
@@ -690,14 +712,14 @@ class ConfigServerMFE extends HTMLElement {
                 }
             }
 
-            this.querySelector('#mfe-edit-modal').classList.add('show');
+            this.root.querySelector('#mfe-edit-modal').classList.add('show');
         };
 
-        this.querySelectorAll('.mfe-editable').forEach(el => {
+        this.root.querySelectorAll('.mfe-editable').forEach(el => {
             el.addEventListener('click', () => triggerEdit(el.dataset.section, el.dataset.key, el.dataset.val !== undefined ? el.dataset.val : el.innerText));
         });
 
-        this.querySelectorAll('.mfe-edit-btn').forEach(btn => {
+        this.root.querySelectorAll('.mfe-edit-btn').forEach(btn => {
             btn.addEventListener('click', () => triggerEdit(btn.dataset.section, btn.dataset.key, btn.dataset.val));
         });
     }

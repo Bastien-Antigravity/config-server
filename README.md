@@ -96,14 +96,15 @@ The server communicates using the **Safe-Socket** `tcp-hello` profile:
 ```
 config-server/
 ├── cmd/
-│   ├── config-server/  # Application entry point
-│   ├── test/           # Test utilities
-│   └── test_client/    # Simple test client
+│   └── config-server/  # Application entry point
 ├── src/
-│   ├── server/         # Server lifecycle, mailbox pattern, and dual-loop handler
-│   ├── store/          # In-memory COW store and debounced persistence manager
-│   ├── core/           # Request processing business logic
-│   ├── helpers/        # Utility functions (Protobuf <-> Map conversion)
-│   └── interfaces/     # Shared interfaces (Logger, etc.)
+│   ├── core/           # Request processing and ConfigController business logic
+│   ├── grpc_control/   # Shadow Port gRPC management service & proto contracts
+│   ├── helpers/        # Utility merge helpers (ApplyUpdates)
+│   ├── rest/           # HTTP REST endpoints & OpenMFE Web Component bundle
+│   ├── server/         # TCP daemon, mailbox pattern, and safe connection lifecycle
+│   ├── store/          # In-memory COW store and debounced atomic persistence manager
+│   └── telegram/       # Tele-Remote client integration and interactive menu manager
+├── quick-overview/     # Modular system architectural summaries and test playbooks
 └── config_store.json   # Default persistence file
 ```
