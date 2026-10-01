@@ -41,6 +41,12 @@ import (
 func main() {
 	// 1. Initialize Service via Unified Ecosystem Bootstrapper
 	appConfig, appLogger := toolbox_bootstrap.BootstrapService("config-server", "store")
+	if appConfig == nil {
+		panic("config-server: bootstrap failed to produce non-nil appConfig")
+	}
+	if appLogger == nil {
+		panic("config-server: bootstrap failed to produce non-nil appLogger")
+	}
 	defer appLogger.Close()
 
 	addr, err := appConfig.GetListenAddr("config_server")
