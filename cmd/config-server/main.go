@@ -105,16 +105,9 @@ func main() {
 		}
 	}()
 
-	// Register config-server OpenMFE with web-interface dynamically
+	// Register config-server OpenMFE with web-interface dynamically (non-blocking, infinite retry)
 	go func() {
-		webAddr, err := appConfig.GetListenAddr("web_interface")
-		if err != nil {
-			appLogger.Warning("Could not resolve web_interface address for OpenMFE registration: %v", err)
-			webAddr = "127.0.0.1:5000"
-		}
-		regUrl := fmt.Sprintf("http://%s/api/v1/register", webAddr)
 		mfeUrl := fmt.Sprintf("http://%s/static/js/mfe-loader.js", restAddr)
-
 		payload := fmt.Sprintf(`{
 			"name": "config-server",
 			"tag": "config-server-mfe",
@@ -123,21 +116,34 @@ func main() {
 		}`, mfeUrl)
 
 		client := &http.Client{Timeout: 3 * time.Second}
-		for i := 0; i < 15; i++ {
-			resp, err := client.Post(regUrl, "application/json", strings.NewReader(payload))
-			if err == nil {
-				resp.Body.Close()
-				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-					appLogger.Info("Successfully registered config-server OpenMFE with web-interface at %s", regUrl)
-					return
+		backoff := 2 * time.Second
+		maxBackoff := 15 * time.Second
+
+		for {
+			webAddr, err := appConfig.GetListenAddr("web_interface")
+			if err == nil && webAddr != "" {
+				regUrl := fmt.Sprintf("http://%s/api/v1/register", webAddr)
+				resp, postErr := client.Post(regUrl, "application/json", strings.NewReader(payload))
+				if postErr == nil {
+					resp.Body.Close()
+					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+						appLogger.Info("Successfully registered config-server OpenMFE with web-interface at %s", regUrl)
+						return
+					}
+					appLogger.Warning("OpenMFE registration attempt failed with status %s; retrying in %v...", resp.Status, backoff)
+				} else {
+					appLogger.Warning("OpenMFE registration attempt failed (%v); retrying in %v...", postErr, backoff)
 				}
-				appLogger.Warning("OpenMFE registration attempt %d failed with status %s", i+1, resp.Status)
 			} else {
-				appLogger.Warning("OpenMFE registration attempt %d failed: %v", i+1, err)
+				appLogger.Warning("web_interface capability address unresolvable (%v); retrying in %v...", err, backoff)
 			}
-			time.Sleep(3 * time.Second)
+
+			time.Sleep(backoff)
+			backoff = time.Duration(float64(backoff) * 1.5)
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
-		appLogger.Warning("Failed to register config-server OpenMFE with web-interface after 15 attempts")
 	}()
 
 	// 6. Start Main Protocol Server

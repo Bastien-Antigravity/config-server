@@ -52,3 +52,4 @@ go test -v ./...
 4. **Header Ritual**: All Go source files MUST begin with the standard Triple-Block header (`ESSENTIAL PROCESS`, `DATA FLOW`, `KEY PARAMETERS`).
 5. **Section Dividers**: Use `// -----------------------------------------------------------------------------` between exported methods and major sections.
 6. **Graceful Shutdown**: All long-running workers (TCP server, gRPC service, persistence worker) must be registered with `toolbox_lifecycle.Manager` to flush state cleanly on `SIGINT`/`SIGTERM`.
+7. **L1 Resilience & Infinite OpenMFE Registration Contract**: OpenMFE registration to `web-interface` must run in a non-blocking background goroutine with infinite retries (`MaxRetries: -1`), exponential backoff, and dynamic address resolution via `appConfig.GetListenAddr("web_interface")`. Never terminate or timeout registration with a finite retry counter.
