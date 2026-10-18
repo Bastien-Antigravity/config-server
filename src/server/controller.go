@@ -19,12 +19,11 @@ package server
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
 	"github.com/Bastien-Antigravity/config-server/src/store"
+	toolbox_version "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/version"
 )
 
 // -----------------------------------------------------------------------------
@@ -153,21 +152,8 @@ func (s *Server) PersistConfig(ctx context.Context) error {
 // -----------------------------------------------------------------------------
 
 // ServerVersion defines the release version reported in status telemetry.
-// It can be dynamically injected at build-time via:
-// -ldflags="-X 'github.com/Bastien-Antigravity/config-server/src/server.ServerVersion=$(VERSION)'"
-var ServerVersion = "0.0.1"
-
-func init() {
-	for _, p := range []string{"VERSION.txt", "../VERSION.txt", "../../VERSION.txt"} {
-		if data, err := os.ReadFile(p); err == nil {
-			v := strings.TrimSpace(string(data))
-			if v != "" {
-				ServerVersion = v
-				break
-			}
-		}
-	}
-}
+// Dynamically resolved from microservice-toolbox (BuildVersion link-time flag or VERSION.txt).
+var ServerVersion = toolbox_version.Get()
 
 // GetStatus returns the health status, active client counts, and client names.
 func (s *Server) GetStatus(ctx context.Context) (core.StatusInfo, error) {
