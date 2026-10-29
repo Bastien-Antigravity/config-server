@@ -112,7 +112,12 @@ func main() {
 			"name": "config-server",
 			"tag": "config-server-mfe",
 			"url": "%s",
-			"navTitle": "⚙️ Config Server"
+			"navTitle": "⚙️ Config Server",
+			"layer": "L1",
+			"category": "Base Fleet",
+			"priority": 20,
+			"icon": "fa-cogs",
+			"requiresAuth": false
 		}`, mfeUrl)
 
 		client := &http.Client{Timeout: 3 * time.Second}
