@@ -19,11 +19,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
+	"net"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/grpc_control"
 	"github.com/Bastien-Antigravity/config-server/src/rest"
@@ -33,6 +31,7 @@ import (
 
 	toolbox_bootstrap "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/bootstrap"
 	toolbox_lifecycle "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/lifecycle"
+	toolbox_spec "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/spec"
 	toolbox_utils "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/utils"
 )
 
@@ -105,61 +104,37 @@ func main() {
 		}
 	}()
 
-	// Register config-server OpenMFE with web-interface dynamically (non-blocking, infinite retry)
-	go func() {
-		mfeUrl := fmt.Sprintf("http://%s/static/js/mfe-loader.js", restAddr)
-		payload := fmt.Sprintf(`{
-			"name": "config-server",
-			"tag": "config-server-mfe",
-			"url": "%s",
-			"navTitle": "⚙️ Config Server",
-			"layer": "L1",
-			"category": "Base Fleet",
-			"priority": 20,
-			"icon": "fa-cogs",
-			"requiresAuth": false
-		}`, mfeUrl)
+	// 5. Initialize Lifecycle Manager
+	lm := toolbox_lifecycle.NewManagerWithLogger(appLogger)
 
-		client := &http.Client{Timeout: 3 * time.Second}
-		backoff := 2 * time.Second
-		maxBackoff := 15 * time.Second
+	// 6. Register config-server specification with web-interface dynamically (linked to lifecycle)
+	mfeUrl := fmt.Sprintf("http://%s/static/js/mfe-loader.js", restAddr)
+	_, tcpPort, _ := net.SplitHostPort(addr)
+	_, restPortStr, _ := net.SplitHostPort(restAddr)
+	grpcAddr, _ := appConfig.GetGRPCListenAddr("config_server")
+	_, grpcPort, _ := net.SplitHostPort(grpcAddr)
 
-		for {
-			webAddr, err := appConfig.GetListenAddr("web_interface")
-			if err == nil && webAddr != "" {
-				regUrl := fmt.Sprintf("http://%s/api/v1/register", webAddr)
-				resp, postErr := client.Post(regUrl, "application/json", strings.NewReader(payload))
-				if postErr == nil {
-					resp.Body.Close()
-					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-						appLogger.Info("Successfully registered config-server OpenMFE with web-interface at %s", regUrl)
-						return
-					}
-					appLogger.Warning("OpenMFE registration attempt failed with status %s; retrying in %v...", resp.Status, backoff)
-				} else {
-					appLogger.Warning("OpenMFE registration attempt failed (%v); retrying in %v...", postErr, backoff)
-				}
-			} else {
-				appLogger.Warning("web_interface capability address unresolvable (%v); retrying in %v...", err, backoff)
-			}
+	_ = toolbox_spec.PublishWithLifecycle(appConfig, appLogger, lm, "config_server", toolbox_spec.ServiceSpec{
+		Name:        "Config Server",
+		Tag:         "config-server-mfe",
+		URL:         mfeUrl,
+		NavTitle:    "Config Server",
+		Layer:       "L1",
+		Category:    "Base Fleet",
+		Priority:    20,
+		Icon:        "fa-cogs",
+		Description: "Centralized configuration repository and real-time distributor across the Bastien-Antigravity fleet via TCP, REST, and gRPC.",
+		Protocol:    "TCP, REST & gRPC",
+		Framing:     fmt.Sprintf("Port %s TCP / Port %s REST / Port %s gRPC", tcpPort, restPortStr, grpcPort),
+		DocLink:     "obsidian-brain/06-Microservices/Config-Server-Hub.md",
+	})
 
-			time.Sleep(backoff)
-			backoff = time.Duration(float64(backoff) * 1.5)
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-		}
-	}()
-
-	// 6. Start Main Protocol Server
+	// 7. Start Main Protocol Server
 	go func() {
 		if err := srv.Start(); err != nil {
 			appLogger.Critical("Server failed: %v", err)
 		}
 	}()
-
-	// 7. Initialize Lifecycle Manager
-	lm := toolbox_lifecycle.NewManagerWithLogger(appLogger)
 
 	// 8. Initialize Tele-Remote Client (via Telegram component)
 	telegram.SetupTelegram(appConfig, srv, appLogger, func(cb func()) {
