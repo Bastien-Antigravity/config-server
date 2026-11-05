@@ -50,6 +50,9 @@ func (s *Server) GetConfig(ctx context.Context, section, key string) (string, bo
 
 // SetConfig updates a configuration value atomically and broadcasts the change.
 func (s *Server) SetConfig(ctx context.Context, section, key, value string) error {
+	if section == "" || key == "" {
+		return fmt.Errorf("section and key must not be empty")
+	}
 	s.Logger.Info("Controller : SetConfig request for [%s] %s = %s", section, key, value)
 
 	err := s.Store.UpdateAtomic(func(sandbox store.ConfigMap) (store.ConfigMap, error) {
@@ -72,6 +75,9 @@ func (s *Server) SetConfig(ctx context.Context, section, key, value string) erro
 
 // DeleteConfig deletes a configuration key atomically and broadcasts the change.
 func (s *Server) DeleteConfig(ctx context.Context, section, key string) error {
+	if section == "" || key == "" {
+		return fmt.Errorf("section and key must not be empty")
+	}
 	s.Logger.Info("Controller : DeleteConfig request for [%s] %s", section, key)
 
 	err := s.Store.UpdateAtomic(func(sandbox store.ConfigMap) (store.ConfigMap, error) {
@@ -85,7 +91,7 @@ func (s *Server) DeleteConfig(ctx context.Context, section, key string) error {
 	}
 
 	s.TriggerSave()
-	s.BroadcastConfig()
+	s.BroadcastFullRefresh()
 	return nil
 }
 
@@ -129,7 +135,11 @@ func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
 			}
 			sec := merged[capName]
 			for k, v := range capMap {
-				setIfEmpty(sec, k, fmt.Sprintf("%v", v))
+				if s, ok := v.(string); ok {
+					setIfEmpty(sec, k, s)
+				} else {
+					setIfEmpty(sec, k, fmt.Sprintf("%v", v))
+				}
 			}
 			if len(sec) == 0 {
 				delete(merged, capName)

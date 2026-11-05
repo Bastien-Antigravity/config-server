@@ -138,7 +138,7 @@ func main() {
 
 	// 8. Initialize Tele-Remote Client (via Telegram component)
 	telegram.SetupTelegram(appConfig, srv, appLogger, func(cb func()) {
-		srv.OnUpdate = cb
+		srv.SetOnUpdate(cb)
 	}, lm)
 
 	// 9. Graceful Shutdown

@@ -17,14 +17,18 @@ package server
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/store"
 	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
 	dist_core "github.com/Bastien-Antigravity/distributed-config/src/core"
+	schemas "github.com/Bastien-Antigravity/distributed-config/src/schemas"
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
+	"google.golang.org/protobuf/proto"
 )
 
 // -----------------------------------------------------------------------------
@@ -147,5 +151,129 @@ func TestServer_GetStatus(t *testing.T) {
 	}
 	if status.Version != ServerVersion {
 		t.Fatalf("expected version %s, got %s", ServerVersion, status.Version)
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_ConcurrentOnUpdateAndBroadcast(t *testing.T) {
+	srv := createTestServer()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					srv.SetOnUpdate(func() {})
+				}
+			}
+		}()
+	}
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					srv.BroadcastConfig()
+					srv.BroadcastFullRefresh()
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_SuperseededListenerClosesMailbox(t *testing.T) {
+	srv := createTestServer()
+
+	mb1 := &clientMailbox{name: "worker-1", send: make(chan []byte, 3)}
+	mb2 := &clientMailbox{name: "worker-1", send: make(chan []byte, 3)}
+
+	srv.addListener("worker-1", mb1)
+	srv.addListener("worker-1", mb2)
+
+	select {
+	case _, ok := <-mb1.send:
+		if ok {
+			t.Fatalf("expected mb1.send to be closed")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("expected mb1.send to be closed, timed out")
+	}
+
+	select {
+	case mb2.send <- []byte("test"):
+		// ok
+	default:
+		t.Fatalf("expected mb2.send to be open")
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_BroadcastFullRefreshOnDelete(t *testing.T) {
+	srv := createTestServer()
+	ctx := context.Background()
+
+	mb := &clientMailbox{name: "worker-test", send: make(chan []byte, 64)}
+	srv.addListener("worker-test", mb)
+
+	// Drain initial broadcastRegistry triggered by addListener
+	select {
+	case <-mb.send:
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	// SetConfig must broadcast BROADCAST_SYNC
+	err := srv.SetConfig(ctx, "app", "mode", "prod")
+	if err != nil {
+		t.Fatalf("SetConfig failed: %v", err)
+	}
+
+	var syncMsg schemas.ConfigMsg
+	select {
+	case raw := <-mb.send:
+		if err := proto.Unmarshal(raw, &syncMsg); err != nil {
+			t.Fatalf("failed to unmarshal msg: %v", err)
+		}
+		if syncMsg.Command != schemas.ConfigMsg_BROADCAST_SYNC {
+			t.Fatalf("expected BROADCAST_SYNC for SetConfig, got %v", syncMsg.Command)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for SetConfig broadcast")
+	}
+
+	// DeleteConfig must broadcast FULL_REFRESH
+	err = srv.DeleteConfig(ctx, "app", "mode")
+	if err != nil {
+		t.Fatalf("DeleteConfig failed: %v", err)
+	}
+
+	var refreshMsg schemas.ConfigMsg
+	select {
+	case raw := <-mb.send:
+		if err := proto.Unmarshal(raw, &refreshMsg); err != nil {
+			t.Fatalf("failed to unmarshal msg: %v", err)
+		}
+		if refreshMsg.Command != schemas.ConfigMsg_FULL_REFRESH {
+			t.Fatalf("expected FULL_REFRESH for DeleteConfig, got %v", refreshMsg.Command)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for DeleteConfig broadcast")
 	}
 }

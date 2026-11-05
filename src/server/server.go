@@ -58,8 +58,16 @@ type Server struct {
 	shutdown      chan struct{}
 	dirty         atomic.Bool
 	OnUpdate      func()
+	onUpdateMu    sync.RWMutex
 	serverSock    factory.Socket
 	sockLock      sync.Mutex
+}
+
+// SetOnUpdate safely registers the callback invoked when configuration state changes.
+func (s *Server) SetOnUpdate(cb func()) {
+	s.onUpdateMu.Lock()
+	s.OnUpdate = cb
+	s.onUpdateMu.Unlock()
 }
 
 // -----------------------------------------------------------------------------
@@ -149,11 +157,14 @@ func (s *Server) Stop() {
 
 // -----------------------------------------------------------------------------
 
-// BroadcastConfig sends a full configuration update to all connected clients.
+// BroadcastConfig sends a delta/merge configuration update to all connected clients.
 func (s *Server) BroadcastConfig() {
-	s.Logger.Info("Broadcasting full configuration update to all clients")
-	if s.OnUpdate != nil {
-		go s.OnUpdate()
+	s.Logger.Info("Broadcasting configuration update to all clients")
+	s.onUpdateMu.RLock()
+	onUpdate := s.OnUpdate
+	s.onUpdateMu.RUnlock()
+	if onUpdate != nil {
+		go onUpdate()
 	}
 	config := s.Store.Get()
 	payload, err := json.Marshal(config)
@@ -162,6 +173,25 @@ func (s *Server) BroadcastConfig() {
 		return
 	}
 	s.broadcastUpdate(schemas.ConfigMsg_BROADCAST_SYNC, payload)
+}
+
+// BroadcastFullRefresh sends a full replacement configuration snapshot to all connected clients.
+// Used when keys are deleted or configuration is reloaded from disk so clients purge removed keys.
+func (s *Server) BroadcastFullRefresh() {
+	s.Logger.Info("Broadcasting full configuration refresh to all clients")
+	s.onUpdateMu.RLock()
+	onUpdate := s.OnUpdate
+	s.onUpdateMu.RUnlock()
+	if onUpdate != nil {
+		go onUpdate()
+	}
+	config := s.Store.Get()
+	payload, err := json.Marshal(config)
+	if err != nil {
+		s.Logger.Error("Failed to marshal config for full refresh: %v", err)
+		return
+	}
+	s.broadcastUpdate(schemas.ConfigMsg_FULL_REFRESH, payload)
 }
 
 // GetActiveClients returns the current number of connected clients.
@@ -182,7 +212,7 @@ func (s *Server) GetClientNames() []string {
 	return names
 }
 
-// ReloadConfig reloads the configuration from the base YAML file.
+// ReloadConfig reloads the configuration from the base YAML file and persistence store.
 func (s *Server) ReloadConfig(ctx context.Context) error {
 	s.Logger.Info("Reloading configuration from disk...")
 
@@ -190,8 +220,14 @@ func (s *Server) ReloadConfig(ctx context.Context) error {
 		return fmt.Errorf("failed to reload config: %w", err)
 	}
 
+	if s.Persistence != nil {
+		if persisted, err := s.Persistence.Load(); err == nil && persisted != nil {
+			s.Store.Replace(persisted)
+		}
+	}
+
 	s.Logger.Info("Config reloaded successfully")
-	s.BroadcastConfig()
+	s.BroadcastFullRefresh()
 	return nil
 }
 
@@ -200,6 +236,10 @@ func (s *Server) ReloadConfig(ctx context.Context) error {
 // addListener adds a client mailbox to the broadcast list.
 func (s *Server) addListener(name string, mailbox *clientMailbox) {
 	s.listenersLock.Lock()
+	if old, exists := s.listeners[name]; exists && old != mailbox {
+		close(old.send)
+		s.Logger.Info("Replaced existing listener for %s", name)
+	}
 	s.listeners[name] = mailbox
 	s.listenersLock.Unlock()
 	go s.broadcastRegistry()

@@ -56,11 +56,11 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	// 10 minutes is a safe balance for configuration synchronization.
 	_ = sock.SetIdleTimeout(10 * time.Minute)
 
-	// Initialize Mailbox (tight buffer of 3 messages)
+	// Initialize Mailbox (buffered to absorb bursty broadcasts and sync replies)
 	mailbox := &clientMailbox{
 		name:           clientName,
 		serviceAddress: rawAddress,
-		send:           make(chan []byte, 3),
+		send:           make(chan []byte, 64),
 	}
 
 	s.addListener(clientName, mailbox)
