@@ -21,7 +21,8 @@ COPY . .
 
 # Ensure dependencies are tidy and build binary
 RUN go mod tidy && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /config-server-bin ./cmd/config-server
+    VERSION=$(cat VERSION.txt 2>/dev/null || echo "0.0.1") && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X 'github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/version.BuildVersion=${VERSION}'" -o /config-server-bin ./cmd/config-server
 
 # === RUNTIME STAGE ===
 FROM alpine:3.20
@@ -31,8 +32,9 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /config-server
 
-# Copy binary from builder stage
+# Copy binary and VERSION.txt from builder stage
 COPY --from=builder /config-server-bin /config-server/config-server
+COPY --from=builder /workspace/config-server/VERSION.txt /config-server/VERSION.txt
 
 # Set the entrypoint
 ENTRYPOINT ["/config-server/config-server"]
