@@ -98,6 +98,7 @@ func main() {
 	}
 
 	restHandler := rest.NewRESTHandler(srv, appLogger)
+	restHandler.SetAppConfig(appConfig)
 	go func() {
 		if err := restHandler.StartServer(restAddr); err != nil {
 			appLogger.Error("REST management server failed: %v", err)
@@ -127,6 +128,7 @@ func main() {
 		Protocol:    "TCP, REST & gRPC",
 		Framing:     fmt.Sprintf("Port %s TCP / Port %s REST / Port %s gRPC", tcpPort, restPortStr, grpcPort),
 		DocLink:     "obsidian-brain/06-Microservices/Config-Server-Hub.md",
+		Contracts:   rest.BuildExchangeContracts(appConfig, nil),
 	})
 
 	// 7. Start Main Protocol Server

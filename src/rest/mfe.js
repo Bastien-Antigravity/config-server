@@ -121,15 +121,26 @@ class ConfigServerMFE extends BaseElementClass {
                     </div>
                 </div>
                 
-                <!-- Configurations Accordion -->
-                <div class="openmfe-card" style="margin-top: var(--space-4, 16px);">
-                    <div class="openmfe-card__header">
-                        <h4 class="openmfe-card__title"><i class="fa fa-cogs"></i> Configuration Parameters</h4>
-                    </div>
-                    <div class="openmfe-card__body" style="padding: 0;">
-                        <div id="mfe-accordion-list">
-                            <div style="padding:40px; text-align:center; color:var(--color-text-muted, #94a3b8);">
-                                <i class="fa fa-spinner fa-spin fa-2x"></i><br><br>Loading configuration parameters...
+                <!-- Sub-Navigation Tabs Bar (div[3]) -->
+                <div class="openmfe-tabs-bar" id="config-tabs-bar" role="tablist">
+                    <button class="openmfe-tab-btn is-active" data-tab="operations" role="tab" type="button">
+                        <i class="fa fa-cogs"></i> Configuration Store
+                    </button>
+                </div>
+
+                <div id="config-panels-host">
+                    <div class="openmfe-panel is-active" id="panel-operations">
+                        <!-- Configurations Accordion -->
+                        <div class="openmfe-card">
+                            <div class="openmfe-card__header">
+                                <h4 class="openmfe-card__title"><i class="fa fa-cogs"></i> Configuration Parameters</h4>
+                            </div>
+                            <div class="openmfe-card__body" style="padding: 0;">
+                                <div id="mfe-accordion-list">
+                                    <div style="padding:40px; text-align:center; color:var(--color-text-muted, #94a3b8);">
+                                        <i class="fa fa-spinner fa-spin fa-2x"></i><br><br>Loading configuration parameters...
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -218,11 +229,26 @@ class ConfigServerMFE extends BaseElementClass {
             editKey: this.querySelector('#edit-key'),
             editValue: this.querySelector('#edit-value'),
             editIdentifier: this.querySelector('#edit-identifier'),
-            editSecretNotice: this.querySelector('#edit-secret-notice')
+            editSecretNotice: this.querySelector('#edit-secret-notice'),
+            tabsBar: this.querySelector('#config-tabs-bar'),
+            panelsHost: this.querySelector('#config-panels-host')
         };
     }
 
+    switchTab(tabName) {
+        this.activeTab = tabName || 'operations';
+        this.querySelectorAll('#config-tabs-bar .openmfe-tab-btn').forEach(btn => {
+            btn.classList.toggle('is-active', btn.getAttribute('data-tab') === this.activeTab);
+        });
+        this.querySelectorAll('#config-panels-host > .openmfe-panel').forEach(panel => {
+            panel.classList.toggle('is-active', panel.id === `panel-${this.activeTab}`);
+        });
+    }
+
     bindEvents() {
+        this.querySelectorAll('#config-tabs-bar .openmfe-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.switchTab(btn.getAttribute('data-tab')));
+        });
         this.querySelectorAll('.mfe-close-add-modal').forEach(el => {
             el.addEventListener('click', () => this.dom.addModal?.classList.remove('show'));
         });
@@ -257,12 +283,31 @@ class ConfigServerMFE extends BaseElementClass {
     }
 
     async onMount() {
+        this.activeTab = this.activeTab || 'operations';
         await this.loadAll();
         this.registerPoll(() => this.loadStatus(), 5000, false);
     }
 
     async loadAll() {
-        await Promise.all([this.loadStatus(), this.loadConfigs()]);
+        await Promise.all([this.loadStatus(), this.loadConfigs(), this.loadContracts()]);
+    }
+
+    async loadContracts() {
+        const contractsApi = typeof window !== 'undefined' ? window.BastienMFEContracts : null;
+        if (!contractsApi || !this.dom.tabsBar || !this.dom.panelsHost) return;
+        const envelope = await contractsApi.fetchContracts({
+            primaryUrls: [`${this.baseUrl}/api/v1/contracts`],
+            serviceName: 'config_server'
+        });
+        contractsApi.mountContractTabs({
+            rootEl: this,
+            tabsBarEl: this.dom.tabsBar,
+            panelsHostEl: this.dom.panelsHost,
+            envelope,
+            activeTab: this.activeTab,
+            onSwitchTab: (tab) => this.switchTab(tab),
+            onRetry: () => this.loadContracts()
+        });
     }
 
     async loadStatus() {

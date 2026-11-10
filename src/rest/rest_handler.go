@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
+	toolbox_config "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 	unilog_interfaces "github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
 
@@ -38,10 +39,11 @@ var mfeJS string
 // -----------------------------------------------------------------------------
 
 type RESTHandler struct {
-	logger  unilog_interfaces.Logger
-	control core.ConfigController
-	server  *http.Server
-	mu      sync.Mutex
+	logger    unilog_interfaces.Logger
+	control   core.ConfigController
+	appConfig *toolbox_config.AppConfig
+	server    *http.Server
+	mu        sync.Mutex
 }
 
 // -----------------------------------------------------------------------------
@@ -54,6 +56,11 @@ func NewRESTHandler(control core.ConfigController, logger unilog_interfaces.Logg
 	}
 }
 
+// SetAppConfig attaches the ecosystem AppConfig for live endpoint resolution in /api/v1/contracts.
+func (h *RESTHandler) SetAppConfig(cfg *toolbox_config.AppConfig) {
+	h.appConfig = cfg
+}
+
 // -----------------------------------------------------------------------------
 
 // RegisterRoutes registers the REST routes to the provided mux
@@ -64,6 +71,7 @@ func (h *RESTHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/reload", h.handleReloadConfig)
 	mux.HandleFunc("/api/v1/config/persist", h.handlePersistConfig)
 	mux.HandleFunc("/api/v1/status", h.handleStatus)
+	mux.HandleFunc("/api/v1/contracts", h.handleContracts)
 
 	// Serve embedded static files (OpenMFE Web Component bundles)
 	mfeHandler := func(w http.ResponseWriter, r *http.Request) {

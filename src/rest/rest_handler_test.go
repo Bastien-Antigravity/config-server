@@ -233,3 +233,28 @@ func TestHandlerRejectsWrongMethods(t *testing.T) {
 		}
 	}
 }
+
+func TestHandlerContractsEndpoint(t *testing.T) {
+	handler := newTestHandler(t, &mockControl{
+		status: core.StatusInfo{Healthy: true, Status: "Running", Version: "1.2.3", ClientNames: []string{"watchdog-127.0.0.1"}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /api/v1/contracts, got %d", rr.Code)
+	}
+
+	var env map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
+		t.Fatalf("failed to decode contracts JSON: %v", err)
+	}
+	if env["service"] != "config_server" || env["reliable"] != true || env["exhaustive"] != true {
+		t.Fatalf("unexpected contracts metadata: %+v", env)
+	}
+	contracts, _ := env["contracts"].([]interface{})
+	if len(contracts) < 4 {
+		t.Fatalf("expected >=4 contract types (rest, grpc, safesocket-protobuf, teleremote), got %d", len(contracts))
+	}
+}

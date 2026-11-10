@@ -35,9 +35,9 @@ go test -v ./...
    - Per-client non-blocking mailbox buffers with dedicated write goroutines to prevent slow consumers from hanging the broadcast loop.
 3. **Control Interfaces (`src/grpc_control`, `src/rest`)**:
    - `grpc_control`: Exposes `ConfigService` for gRPC sync and update streams.
-   - `rest`: Serves REST routes (`/api/v1/config`, `/api/v1/health`) and hosts OpenMFE web assets (`/static/js/mfe-loader.js`).
-4. **OpenMFE Dynamic Registration**:
-   - Auto-registers with `web-interface` at `http://<webAddr>/api/v1/register` with exponential backoff on startup.
+   - `rest`: Serves REST routes (`/api/v1/config`, `/api/v1/contracts`, `/api/v1/health`) and hosts OpenMFE web assets (`/static/js/mfe-loader.js` with `#config-tabs-bar` Exchange Contract tabs).
+4. **OpenMFE Dynamic Registration & Exchange Contracts**:
+   - Auto-registers with `web-interface` at `http://<webAddr>/api/v1/register` with exponential backoff on startup, attaching authoritative `ExchangeContract` schemas (`config_server.proto` + `protoreflect` ConfigMsg IDL, SafeSocket TCP sync, REST API, TeleRemote client).
 5. **Tele-Remote Integration (`src/telegram`)**:
    - Binds to `tele-remote` for live menu controls and configuration tweak callbacks.
 
