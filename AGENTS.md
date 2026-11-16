@@ -28,11 +28,11 @@ go test -v ./...
 
 ## Internal Architecture & Subsystems
 1. **Core & Store (`src/core`, `src/store`)**:
-   - In-memory store using Copy-On-Write (COW) mutex semantics to guarantee read consistency and atomic updates.
+   - In-memory store using `atomic.Pointer[ConfigMap]` lock-free Copy-On-Write (COW) reads (`Get()`) and serialized `sync.Mutex` write transactions (`Set()`, `UpdateAtomic()`).
    - Debounced file persistence worker flushing state to `config_store.json` (or path passed via `--store` flag).
 2. **Network Layer (`src/server`)**:
    - Built on `safe-socket` (`tcp-hello` profile) with handshake verification (`Name`/`Group`) and 10-minute idle timeouts.
-   - Per-client non-blocking mailbox buffers with dedicated write goroutines to prevent slow consumers from hanging the broadcast loop.
+   - Lock-free `atomic.Pointer[map[string]*clientMailbox]` listener map for zero-mutex `Broadcast()` and `getRegistryPayload()`, paired with per-client non-blocking mailbox buffers and dedicated write goroutines.
 3. **Control Interfaces (`src/grpc_control`, `src/rest`)**:
    - `grpc_control`: Exposes `ConfigService` for gRPC sync and update streams.
    - `rest`: Serves REST routes (`/api/v1/config`, `/api/v1/contracts`, `/api/v1/health`) and hosts OpenMFE web assets (`/static/js/mfe-loader.js` with `#config-tabs-bar` Exchange Contract tabs).

@@ -20,7 +20,7 @@ Config Server is a lightweight, high-performance configuration management servic
 
 - **Dynamic Service Registry & Discovery**: Automatically maps incoming client nodes and their advertised listening addresses (`ServiceAddress`). Real-time address mappings (`service_addresses`) are broadcast across the fleet via `BROADCAST_REGISTRY` to enable dynamic service-to-service routing without static configuration.
 - **Persistent Storage**: Backed by a human-readable JSON file (default: `config_store.json`) with debounced 5-second atomic writes.
-- **Read-Fast Architecture**: Uses `sync.RWMutex` with a Copy-On-Write (COW) strategy for zero-allocation, high-concurrency reads.
+- **Read-Fast Architecture**: Uses `atomic.Pointer[ConfigMap]` with a Copy-On-Write (COW) strategy for 100% lock-free, zero-allocation high-concurrency reads, and `atomic.Pointer[map[string]*clientMailbox]` for lock-free broadcasts.
 - **Reliable Transport**: Built on **[safe-socket](https://github.com/Bastien-Antigravity/safe-socket)** for robust, framed TCP communication with handshake (Identity) support.
 - **Generic Protobuf Messaging**: Uses the `ConfigMsg` schema from `distributed-config` for high-performance binary serialization.
 - **Standalone Mode**: Can run with local configuration or integrate into a distributed system.

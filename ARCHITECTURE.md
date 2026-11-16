@@ -31,7 +31,7 @@ graph TD
     ConnectionHandler -->|ReadMessage| RequestHandler(Core / ProcessRequest)
     
     subgraph "Server Core"
-        RequestHandler <-->|Mutex + COW| Store(In-Memory Store)
+        RequestHandler <-->|atomic.Pointer + COW| Store(In-Memory Store)
         RequestHandler -->|Trigger| Persistence(Persistence Worker)
         RequestHandler -->|Trigger| Broadcaster(Broadcast Manager)
     end
@@ -53,19 +53,19 @@ The server delegates low-level networking to the **[safe-socket](https://github.
   - **Reconnection**: Handled by the client-side of the library.
 
 ### 2. Server Logic (`src/server`)
-- **Lifecycle**: `Server.Start()` initializes the listener and starts the background `persistenceWorker`.
-- **Broadcast System**: Uses a **Per-Client Mailbox Pattern** with tight buffers (3 messages max). Outgoing writes are handled in dedicated goroutines to prevent slow clients from blocking the server.
-- **Identity Management**: Uses stable `Service-IP` identification. `removeListener` uses pointer comparison to protect against "ghost disconnections" during rapid service restarts.
+- **Lifecycle**: `Server.Start()` initializes the listener (`atomic.Pointer[factory.Socket]`) and starts the background `persistenceWorker`.
+- **Broadcast System**: Uses a lock-free `atomic.Pointer[map[string]*clientMailbox]` listener table and a **Per-Client Mailbox Pattern** with tight buffers (3 messages max). `Broadcast()` and `getRegistryPayload()` dereference the immutable listener map directly with zero mutex acquisition. Outgoing writes are handled in dedicated goroutines to prevent slow clients from blocking the server.
+- **Identity Management**: Uses stable `Service-IP` identification. `addListener` and `removeListener` serialize map Copy-On-Write updates via `writeMu` and use pointer comparison to protect against "ghost disconnections" during rapid service restarts.
 
 ### 3. Core Logic (`src/core`)
 - **Request Processing**: `ProcessRequest` acts as the dispatcher. It deserializes the `ConfigMsg` (Protobuf) and interacts with the Store.
 - **Asynchronous Rituals**: Commands like `PUT_SYNC` trigger non-blocking broadcasts and debounced persistence saving.
 
 ### 4. Storage Layer (`src/store`)
-- **Data Structure**: `ConfigMap` (map[string]map[string]string).
+- **Data Structure**: `ConfigMap` (`map[string]map[string]string`) held in an `atomic.Pointer[ConfigMap]`.
 - **Concurrency**:
-  - Uses `sync.RWMutex` to protect nested map structures.
-  - **Copy-On-Write (COW)**: `Get()` provides zero-allocation direct access (fast path). `UpdateAtomic()` creates a sandbox copy, ensuring existing readers are never exposed to intermediate states.
+  - Uses `atomic.Pointer[ConfigMap]` for 100% lock-free reads and `sync.Mutex` (`writeMu`) to serialize Copy-On-Write mutations.
+  - **Copy-On-Write (COW)**: `Get()` executes `s.config.Load()` for zero-lock, zero-allocation direct access (fast path). `UpdateAtomic()` and `Set()` clone a sandbox copy under `writeMu` and atomically swap the pointer (`s.config.Store(&newConfig)`), ensuring readers are never exposed to intermediate states.
 - **Persistence**: A debounced background worker (`persistenceWorker`) writes the state to disk at most once every 5 seconds if marked as `dirty`.
 
 ### 5. Unified Controller Interface (`src/core/controller.go`)

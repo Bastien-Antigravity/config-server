@@ -53,35 +53,37 @@ type Server struct {
 	Store         *store.Store
 	Persistence   *store.PersistenceManager
 	AppConfig     *utilconf.AppConfig // Toolbox Config
-	listeners     map[string]*clientMailbox
-	listenersLock sync.RWMutex
+	listeners     atomic.Pointer[map[string]*clientMailbox]
+	listenersLock sync.Mutex
 	shutdown      chan struct{}
 	dirty         atomic.Bool
-	OnUpdate      func()
-	onUpdateMu    sync.RWMutex
-	serverSock    factory.Socket
-	sockLock      sync.Mutex
+	onUpdate      atomic.Pointer[func()]
+	serverSock    atomic.Pointer[factory.Socket]
 }
 
-// SetOnUpdate safely registers the callback invoked when configuration state changes.
+// SetOnUpdate atomically registers the callback invoked when configuration state changes.
 func (s *Server) SetOnUpdate(cb func()) {
-	s.onUpdateMu.Lock()
-	s.OnUpdate = cb
-	s.onUpdateMu.Unlock()
+	if cb == nil {
+		s.onUpdate.Store(nil)
+		return
+	}
+	s.onUpdate.Store(&cb)
 }
 
 // -----------------------------------------------------------------------------
 
 // NewServer creates a new Config Server.
-func NewServer(ac *utilconf.AppConfig, logger interfaces.Logger, s *store.Store, pm *store.PersistenceManager) *Server {
-	return &Server{
+func NewServer(ac *utilconf.AppConfig, logger interfaces.Logger, st *store.Store, pm *store.PersistenceManager) *Server {
+	srv := &Server{
 		AppConfig:   ac,
 		Logger:      logger,
-		Store:       s,
+		Store:       st,
 		Persistence: pm,
-		listeners:   make(map[string]*clientMailbox),
 		shutdown:    make(chan struct{}),
 	}
+	initialListeners := make(map[string]*clientMailbox)
+	srv.listeners.Store(&initialListeners)
+	return srv
 }
 
 // -----------------------------------------------------------------------------
@@ -107,17 +109,12 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
-	s.sockLock.Lock()
-	s.serverSock = serverSock
-	s.sockLock.Unlock()
+	s.serverSock.Store(&serverSock)
 
 	defer func() {
-		s.sockLock.Lock()
-		if s.serverSock != nil {
-			_ = s.serverSock.Close()
-			s.serverSock = nil
+		if old := s.serverSock.Swap(nil); old != nil && *old != nil {
+			_ = (*old).Close()
 		}
-		s.sockLock.Unlock()
 	}()
 
 	s.Logger.Info("Config Server listening on " + addr)
@@ -148,11 +145,9 @@ func (s *Server) Stop() {
 		close(s.shutdown)
 	}
 
-	s.sockLock.Lock()
-	if s.serverSock != nil {
-		_ = s.serverSock.Close()
+	if sockPtr := s.serverSock.Load(); sockPtr != nil && *sockPtr != nil {
+		_ = (*sockPtr).Close()
 	}
-	s.sockLock.Unlock()
 }
 
 // -----------------------------------------------------------------------------
@@ -160,11 +155,8 @@ func (s *Server) Stop() {
 // BroadcastConfig sends a delta/merge configuration update to all connected clients.
 func (s *Server) BroadcastConfig() {
 	s.Logger.Info("Broadcasting configuration update to all clients")
-	s.onUpdateMu.RLock()
-	onUpdate := s.OnUpdate
-	s.onUpdateMu.RUnlock()
-	if onUpdate != nil {
-		go onUpdate()
+	if cbPtr := s.onUpdate.Load(); cbPtr != nil && *cbPtr != nil {
+		go (*cbPtr)()
 	}
 	config := s.Store.Get()
 	payload, err := json.Marshal(config)
@@ -179,11 +171,8 @@ func (s *Server) BroadcastConfig() {
 // Used when keys are deleted or configuration is reloaded from disk so clients purge removed keys.
 func (s *Server) BroadcastFullRefresh() {
 	s.Logger.Info("Broadcasting full configuration refresh to all clients")
-	s.onUpdateMu.RLock()
-	onUpdate := s.OnUpdate
-	s.onUpdateMu.RUnlock()
-	if onUpdate != nil {
-		go onUpdate()
+	if cbPtr := s.onUpdate.Load(); cbPtr != nil && *cbPtr != nil {
+		go (*cbPtr)()
 	}
 	config := s.Store.Get()
 	payload, err := json.Marshal(config)
@@ -194,19 +183,24 @@ func (s *Server) BroadcastFullRefresh() {
 	s.broadcastUpdate(schemas.ConfigMsg_FULL_REFRESH, payload)
 }
 
-// GetActiveClients returns the current number of connected clients.
+// GetActiveClients returns the current number of connected clients lock-free.
 func (s *Server) GetActiveClients() int {
-	s.listenersLock.RLock()
-	defer s.listenersLock.RUnlock()
-	return len(s.listeners)
+	ptr := s.listeners.Load()
+	if ptr == nil {
+		return 0
+	}
+	return len(*ptr)
 }
 
-// GetClientNames returns the names of all currently connected clients.
+// GetClientNames returns the names of all currently connected clients lock-free.
 func (s *Server) GetClientNames() []string {
-	s.listenersLock.RLock()
-	defer s.listenersLock.RUnlock()
-	names := make([]string, 0, len(s.listeners))
-	for name := range s.listeners {
+	ptr := s.listeners.Load()
+	if ptr == nil {
+		return nil
+	}
+	current := *ptr
+	names := make([]string, 0, len(current))
+	for name := range current {
 		names = append(names, name)
 	}
 	return names
@@ -233,27 +227,44 @@ func (s *Server) ReloadConfig(ctx context.Context) error {
 
 // -----------------------------------------------------------------------------
 
-// addListener adds a client mailbox to the broadcast list.
+// addListener adds a client mailbox to the broadcast list via atomic pointer swap.
 func (s *Server) addListener(name string, mailbox *clientMailbox) {
 	s.listenersLock.Lock()
-	if old, exists := s.listeners[name]; exists && old != mailbox {
+	oldPtr := s.listeners.Load()
+	next := make(map[string]*clientMailbox)
+	if oldPtr != nil {
+		for k, v := range *oldPtr {
+			next[k] = v
+		}
+	}
+	if old, exists := next[name]; exists && old != mailbox {
 		close(old.send)
 		s.Logger.Info("Replaced existing listener for %s", name)
 	}
-	s.listeners[name] = mailbox
+	next[name] = mailbox
+	s.listeners.Store(&next)
 	s.listenersLock.Unlock()
 	go s.broadcastRegistry()
 }
 
 // -----------------------------------------------------------------------------
 
-// removeListener removes a client from the broadcast list only if it's the same instance.
+// removeListener removes a client from the broadcast list via atomic pointer swap.
 func (s *Server) removeListener(name string, mailbox *clientMailbox) {
 	s.listenersLock.Lock()
-	if current, ok := s.listeners[name]; ok && current == mailbox {
-		delete(s.listeners, name)
-		close(mailbox.send) // Safe to close here as we removed it from the map under lock
-		s.Logger.Info("Listener removed: %s", name)
+	oldPtr := s.listeners.Load()
+	if oldPtr != nil {
+		if current, ok := (*oldPtr)[name]; ok && current == mailbox {
+			next := make(map[string]*clientMailbox, len(*oldPtr)-1)
+			for k, v := range *oldPtr {
+				if k != name {
+					next[k] = v
+				}
+			}
+			s.listeners.Store(&next)
+			close(mailbox.send)
+			s.Logger.Info("Listener removed: %s", name)
+		}
 	}
 	s.listenersLock.Unlock()
 	go s.broadcastRegistry()
@@ -291,19 +302,20 @@ func (s *Server) persistenceWorker() {
 
 // -----------------------------------------------------------------------------
 
-// broadcastRegistry sends the list of all connected active clients.
+// broadcastRegistry sends the list of all connected active clients lock-free.
 func (s *Server) broadcastRegistry() {
-	s.listenersLock.RLock()
+	ptr := s.listeners.Load()
 	registry := make(map[string][]string)
 	var clients []string
 	var addresses []string
-	for name, mb := range s.listeners {
-		clients = append(clients, name)
-		if mb != nil && mb.serviceAddress != "" {
-			addresses = append(addresses, fmt.Sprintf("%s=%s", name, mb.serviceAddress))
+	if ptr != nil {
+		for name, mb := range *ptr {
+			clients = append(clients, name)
+			if mb != nil && mb.serviceAddress != "" {
+				addresses = append(addresses, fmt.Sprintf("%s=%s", name, mb.serviceAddress))
+			}
 		}
 	}
-	s.listenersLock.RUnlock()
 
 	registry["active_services"] = clients
 	if len(addresses) > 0 {
@@ -320,10 +332,12 @@ func (s *Server) broadcastRegistry() {
 
 // -----------------------------------------------------------------------------
 
-// broadcastUpdate sends configuration updates to all connected client mailboxes.
+// broadcastUpdate sends configuration updates to all connected client mailboxes lock-free.
 func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
-	s.listenersLock.RLock()
-	defer s.listenersLock.RUnlock()
+	ptr := s.listeners.Load()
+	if ptr == nil {
+		return
+	}
 
 	msg := &schemas.ConfigMsg{
 		Command: cmd,
@@ -335,7 +349,7 @@ func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 		return
 	}
 
-	for name, mailbox := range s.listeners {
+	for name, mailbox := range *ptr {
 		// Non-blocking send to mailbox.
 		// If the channel is full, we drop the message for that client to avoid blocking.
 		// The client will eventually be cleaned up by the idle timeout if it remains stuck.

@@ -23,8 +23,8 @@ tags:
 - **Client Synchronization**: Clients fetch initial states via `GET_SYNC` and can request full baseline resets via `FULL_REFRESH`.
 
 ### 2. Copy-On-Write In-Memory Store
-- **Thread-Safe Architecture**: Uses `sync.RWMutex` with a Copy-On-Write (COW) pattern to provide zero-allocation, instant read access (`store.Get()`).
-- **Atomic Modifications**: Mutations create an isolated deep copy (`UpdateAtomic()`). If modification succeeds, the internal pointer is swapped instantaneously; on error, the sandbox is discarded without side-effects.
+- **Lock-Free Read Architecture**: Uses `atomic.Pointer[ConfigMap]` with a Copy-On-Write (COW) pattern to provide 100% lock-free, zero-allocation instant read access (`store.Get()`), alongside `atomic.Pointer[map[string]*clientMailbox]` for lock-free broadcasts.
+- **Atomic Modifications**: Mutations create an isolated deep copy under `writeMu` (`UpdateAtomic()` / `Set()`). If modification succeeds, the `atomic.Pointer` is swapped instantaneously; on error, the sandbox is discarded without side-effects.
 
 ### 3. Dynamic Service Registry & Auto-Discovery
 - **Handshake Verification**: Authenticates connecting clients via SafeSocket `tcp-hello` handshakes, extracting advertised service names and listen addresses.
