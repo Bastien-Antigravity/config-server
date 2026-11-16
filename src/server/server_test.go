@@ -277,3 +277,92 @@ func TestServer_BroadcastFullRefreshOnDelete(t *testing.T) {
 		t.Fatalf("timed out waiting for DeleteConfig broadcast")
 	}
 }
+
+// -----------------------------------------------------------------------------
+
+func TestServer_OverflowElevatesToFullRefresh(t *testing.T) {
+	srv := createTestServer()
+
+	mb := &clientMailbox{
+		name: "slow-worker",
+		// Mailbox with capacity 1 to easily simulate overflow
+		send: make(chan []byte, 1),
+	}
+	// Fill the buffer so next send overflows
+	mb.send <- []byte("initial")
+
+	srv.addListener("slow-worker", mb)
+
+	// Broadcast an update: buffer is full, so message is dropped and needsRefresh is flagged
+	srv.BroadcastConfig()
+
+	if !mb.needsRefresh.Load() {
+		t.Fatalf("expected needsRefresh to be set on mailbox overflow")
+	}
+
+	// Drain the buffer
+	<-mb.send
+
+	// Next broadcast: should be elevated to FULL_REFRESH
+	srv.BroadcastConfig()
+
+	select {
+	case raw := <-mb.send:
+		var msg schemas.ConfigMsg
+		if err := proto.Unmarshal(raw, &msg); err != nil {
+			t.Fatalf("unmarshal error: %v", err)
+		}
+		if msg.Command != schemas.ConfigMsg_FULL_REFRESH {
+			t.Fatalf("expected overflow recovery to elevate to FULL_REFRESH, got %v", msg.Command)
+		}
+		if mb.needsRefresh.Load() {
+			t.Fatalf("expected needsRefresh to be cleared after sending FULL_REFRESH")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for FULL_REFRESH recovery message")
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_SaveSyncAndVersionIncrement(t *testing.T) {
+	srv := createTestServer()
+	ctx := context.Background()
+
+	// 1. Initial SetConfig
+	err := srv.SetConfig(ctx, "cluster", "nodes", "1")
+	if err != nil {
+		t.Fatalf("SetConfig failed: %v", err)
+	}
+	v1 := srv.Store.GetVersion()
+
+	// 2. Second SetConfig
+	err = srv.SetConfig(ctx, "cluster", "nodes", "2")
+	if err != nil {
+		t.Fatalf("SetConfig failed: %v", err)
+	}
+	v2 := srv.Store.GetVersion()
+	if v2 != v1+1 {
+		t.Fatalf("expected version %d, got %d", v1+1, v2)
+	}
+
+	// 3. Verify OCC conflict on SetConfigWithOCC (expecting stale v1 when current is v2)
+	err = srv.SetConfigWithOCC(ctx, "cluster", "nodes", "4", v1)
+	if err == nil {
+		t.Fatalf("expected OCC version mismatch error")
+	}
+
+	// 4. Verify OCC success on SetConfigWithOCC with matching version v2
+	err = srv.SetConfigWithOCC(ctx, "cluster", "nodes", "4", v2)
+	if err != nil {
+		t.Fatalf("unexpected OCC error: %v", err)
+	}
+	if srv.Store.GetVersion() != v2+1 {
+		t.Fatalf("expected version %d, got %d", v2+1, srv.Store.GetVersion())
+	}
+
+	// 5. Verify SaveSync commits cleanly
+	if err := srv.SaveSync(); err != nil {
+		t.Fatalf("SaveSync failed: %v", err)
+	}
+}

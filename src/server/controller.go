@@ -50,18 +50,34 @@ func (s *Server) GetConfig(ctx context.Context, section, key string) (string, bo
 
 // SetConfig updates a configuration value atomically and broadcasts the change.
 func (s *Server) SetConfig(ctx context.Context, section, key, value string) error {
+	return s.SetConfigWithOCC(ctx, section, key, value, 0)
+}
+
+// -----------------------------------------------------------------------------
+
+// SetConfigWithOCC updates a configuration value atomically with OCC verification, commits to persistence, and broadcasts.
+func (s *Server) SetConfigWithOCC(ctx context.Context, section, key, value string, expectedVersion uint64) error {
 	if section == "" || key == "" {
 		return fmt.Errorf("section and key must not be empty")
 	}
-	s.Logger.Info("Controller : SetConfig request for [%s] %s = %s", section, key, value)
+	s.Logger.Info("Controller : SetConfig request for [%s] %s = %s (expected_version: %d)", section, key, value, expectedVersion)
 
-	err := s.Store.UpdateAtomic(func(sandbox store.ConfigMap) (store.ConfigMap, error) {
-		if _, ok := sandbox[section]; !ok {
-			sandbox[section] = make(map[string]string)
-		}
-		sandbox[section][key] = value
-		return sandbox, nil
-	})
+	var err error
+	if expectedVersion == 0 {
+		// Hot-path optimization: clone only the modified section
+		err = s.Store.UpdateSection(section, func(sec map[string]string) error {
+			sec[key] = value
+			return nil
+		})
+	} else {
+		err = s.Store.UpdateAtomicWithOCC(expectedVersion, func(sandbox store.ConfigMap) (store.ConfigMap, error) {
+			if _, ok := sandbox[section]; !ok {
+				sandbox[section] = make(map[string]string)
+			}
+			sandbox[section][key] = value
+			return sandbox, nil
+		})
+	}
 	if err != nil {
 		return err
 	}
@@ -80,11 +96,10 @@ func (s *Server) DeleteConfig(ctx context.Context, section, key string) error {
 	}
 	s.Logger.Info("Controller : DeleteConfig request for [%s] %s", section, key)
 
-	err := s.Store.UpdateAtomic(func(sandbox store.ConfigMap) (store.ConfigMap, error) {
-		if keys, ok := sandbox[section]; ok {
-			delete(keys, key)
-		}
-		return sandbox, nil
+	// Hot-path optimization: clone only the modified section
+	err := s.Store.UpdateSection(section, func(sec map[string]string) error {
+		delete(sec, key)
+		return nil
 	})
 	if err != nil {
 		return err
@@ -161,6 +176,13 @@ func (s *Server) PersistConfig(ctx context.Context) error {
 
 // -----------------------------------------------------------------------------
 
+// GetStoreVersion returns the current monotonic configuration version.
+func (s *Server) GetStoreVersion(ctx context.Context) uint64 {
+	return s.Store.GetVersion()
+}
+
+// -----------------------------------------------------------------------------
+
 // ServerVersion defines the release version reported in status telemetry.
 // Dynamically resolved from microservice-toolbox (BuildVersion link-time flag or VERSION.txt).
 var ServerVersion = toolbox_version.Get()
@@ -172,6 +194,7 @@ func (s *Server) GetStatus(ctx context.Context) (core.StatusInfo, error) {
 		Healthy:       true,
 		Status:        "Operational",
 		Version:       ServerVersion,
+		StoreVersion:  s.Store.GetVersion(),
 		Timestamp:     time.Now().Unix(),
 		ActiveClients: s.GetActiveClients(),
 		ClientNames:   s.GetClientNames(),

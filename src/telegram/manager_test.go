@@ -68,6 +68,14 @@ func (m *mockController) SetConfig(ctx context.Context, section, key, value stri
 	return nil
 }
 
+func (m *mockController) SetConfigWithOCC(ctx context.Context, section, key, value string, expectedVersion uint64) error {
+	return m.SetConfig(ctx, section, key, value)
+}
+
+func (m *mockController) GetStoreVersion(ctx context.Context) uint64 {
+	return 0
+}
+
 func (m *mockController) DeleteConfig(ctx context.Context, section, key string) error {
 	m.lastDelKey = key
 	if s, ok := m.config[section]; ok {

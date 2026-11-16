@@ -43,6 +43,7 @@ type clientMailbox struct {
 	name           string
 	serviceAddress string
 	send           chan []byte
+	needsRefresh   atomic.Bool
 }
 
 // -----------------------------------------------------------------------------
@@ -277,9 +278,18 @@ func (s *Server) TriggerSave() {
 	s.dirty.Store(true)
 }
 
+// SaveSync immediately commits the current store state to disk synchronously, clearing dirty status.
+func (s *Server) SaveSync() error {
+	if s.Persistence == nil {
+		return nil
+	}
+	s.dirty.Store(false)
+	return s.Persistence.Save(s.Store.Get())
+}
+
 // persistenceWorker periodically saves the configuration to disk if dirty.
 func (s *Server) persistenceWorker() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -339,9 +349,11 @@ func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 		return
 	}
 
+	version := int32(s.Store.GetVersion())
 	msg := &schemas.ConfigMsg{
 		Command: cmd,
 		Payload: payload,
+		Version: version,
 	}
 	bytes, err := proto.Marshal(msg)
 	if err != nil {
@@ -349,15 +361,40 @@ func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 		return
 	}
 
+	var fullRefreshBytes []byte
+	getFullRefreshBytes := func() []byte {
+		if fullRefreshBytes == nil {
+			fullPayload, _ := json.Marshal(s.Store.Get())
+			fullMsg := &schemas.ConfigMsg{
+				Command: schemas.ConfigMsg_FULL_REFRESH,
+				Payload: fullPayload,
+				Version: version,
+			}
+			fullRefreshBytes, _ = proto.Marshal(fullMsg)
+		}
+		return fullRefreshBytes
+	}
+
 	for name, mailbox := range *ptr {
-		// Non-blocking send to mailbox.
-		// If the channel is full, we drop the message for that client to avoid blocking.
-		// The client will eventually be cleaned up by the idle timeout if it remains stuck.
+		targetBytes := bytes
+
+		// If this client had a prior overflow, elevate to FULL_REFRESH to restore parity
+		if mailbox.needsRefresh.Load() {
+			if fb := getFullRefreshBytes(); fb != nil {
+				targetBytes = fb
+			}
+		}
+
 		select {
-		case mailbox.send <- bytes:
-			// Message queued
+		case mailbox.send <- targetBytes:
+			// Message queued successfully; clear overflow recovery flag if sent
+			if mailbox.needsRefresh.Load() {
+				mailbox.needsRefresh.Store(false)
+			}
 		default:
-			s.Logger.Warning("Client %s mailbox full. Dropping message.", name)
+			// Buffer transiently full: flag for FULL_REFRESH on next broadcast without dropping connection
+			s.Logger.Warning("Client %s mailbox full (transient burst). Flagged for FULL_REFRESH recovery on next message.", name)
+			mailbox.needsRefresh.Store(true)
 		}
 	}
 }

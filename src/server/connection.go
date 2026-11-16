@@ -60,7 +60,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	mailbox := &clientMailbox{
 		name:           clientName,
 		serviceAddress: rawAddress,
-		send:           make(chan []byte, 64),
+		send:           make(chan []byte, 3),
 	}
 
 	s.addListener(clientName, mailbox)

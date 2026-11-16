@@ -27,7 +27,7 @@ tags:
 │  src/server (Connection & Network Daemon)                        │
 │   ├── Socket Listener (safe-socket tcp-hello profile)            │
 │   ├── Dual-Loop Handler (Reader + Writer goroutines)             │
-│   └── Per-Client Non-Blocking Mailboxes (buffer: 3 messages)     │
+│   └── Per-Client Non-Blocking Mailboxes (buffer: 16 messages)    │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │
                                 ▼
@@ -51,7 +51,7 @@ tags:
 
 ### 1. SafeSocket Dual-Loop Connection Model
 - **Handshake Authentication**: Every TCP connection on port `3306` must immediately exchange identity metadata (`Name`, `Address`).
-- **Dedicated Mailbox Pattern**: Each client receives an isolated channel (`chan []byte, buffer: 3`). Broadcasts use non-blocking `select`: if a consumer is unresponsive, messages are dropped to prevent fleet-wide stalling.
+- **Dedicated Mailbox Pattern**: Each client receives an isolated channel (`chan []byte, buffer: 3`). Broadcasts use non-blocking `select`: if a consumer transiently overflows its buffer, the server flags the mailbox and elevates the next delivery to `FULL_REFRESH`, gently recovering parity without dropping the connection.
 - **`sync.Once` Coordinated Teardown**: Either side of the connection (reader error or writer socket failure) triggers a single-execution teardown that cleanly closes the socket, stops goroutines, and unregisters the client from `s.listeners` without channel panics.
 
 ### 2. Management Interfaces (gRPC, REST, OpenMFE)
@@ -60,5 +60,5 @@ tags:
 - **Tele-Remote Integration**: Binds `MenuManager` to the `tele-remote` daemon over gRPC, mapping configuration sections into an interactive Telegram button tree.
 
 ### 3. Store & Persistence Layer
-- **Copy-On-Write (COW)**: Implements atomic pointer swaps for state updates. Read operations (`Get`) return immutable memory views without holding write locks.
-- **Debounced Persistence Worker**: A dedicated background worker evaluates the atomic `dirty` flag every 5 seconds. On shutdown, `toolbox_lifecycle.Manager` executes a synchronous final save before process exit.
+- **Copy-On-Write (COW) with Path-Copying**: Uses `store.UpdateSection()` to clone only modified sections, structurally sharing untouched sections. Increments an atomic `uint64` version for sequence tracking.
+- **Debounced 1-Second Persistence**: In-memory updates acknowledge instantly; the background worker flushes dirty state every 1 second, with synchronous save (`SaveSync()`) reserved for shutdown.

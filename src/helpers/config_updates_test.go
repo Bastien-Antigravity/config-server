@@ -74,4 +74,18 @@ func TestApplyUpdates(t *testing.T) {
 	if merged["section3"]["keyE"] != "valE" {
 		t.Fatalf("expected section3 keyE to be valE, got %s", merged["section3"]["keyE"])
 	}
+
+	// Verify sentinel deletion
+	delUpdates := store.ConfigMap{
+		"section1": {
+			"keyA": "__DELETED__",
+		},
+	}
+	delMerged := ApplyUpdates(merged, delUpdates)
+	if _, exists := delMerged["section1"]["keyA"]; exists {
+		t.Fatalf("expected keyA to be deleted via __DELETED__ sentinel")
+	}
+	if delMerged["section1"]["keyB"] != "valB_updated" {
+		t.Fatalf("expected keyB to remain valB_updated, got %s", delMerged["section1"]["keyB"])
+	}
 }

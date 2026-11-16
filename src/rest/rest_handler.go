@@ -20,6 +20,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
+	"github.com/Bastien-Antigravity/config-server/src/store"
 	toolbox_config "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 	unilog_interfaces "github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
@@ -87,6 +89,7 @@ func (h *RESTHandler) RegisterRoutes(mux *http.ServeMux) {
 type httpGetResponse struct {
 	Success   bool   `json:"success"`
 	Value     string `json:"value"`
+	Version   uint64 `json:"version,omitempty"`
 	Timestamp int64  `json:"timestamp"`
 }
 
@@ -109,6 +112,7 @@ func (h *RESTHandler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		h.sendJSON(w, httpGetResponse{
 			Success:   false,
 			Value:     "",
+			Version:   h.control.GetStoreVersion(r.Context()),
 			Timestamp: time.Now().Unix(),
 		})
 		return
@@ -117,19 +121,22 @@ func (h *RESTHandler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, httpGetResponse{
 		Success:   ok,
 		Value:     val,
+		Version:   h.control.GetStoreVersion(r.Context()),
 		Timestamp: time.Now().Unix(),
 	})
 }
 
 type httpSetConfigRequest struct {
-	Section string `json:"section"`
-	Key     string `json:"key"`
-	Value   string `json:"value"`
+	Section         string `json:"section"`
+	Key             string `json:"key"`
+	Value           string `json:"value"`
+	ExpectedVersion uint64 `json:"expected_version,omitempty"`
 }
 
 type httpControlResponse struct {
 	Success   bool   `json:"success"`
 	Message   string `json:"message"`
+	Version   uint64 `json:"version,omitempty"`
 	Timestamp int64  `json:"timestamp"`
 	ErrorCode string `json:"error_code,omitempty"`
 }
@@ -146,11 +153,23 @@ func (h *RESTHandler) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.control.SetConfig(r.Context(), req.Section, req.Key, req.Value)
+	err := h.control.SetConfigWithOCC(r.Context(), req.Section, req.Key, req.Value, req.ExpectedVersion)
 	if err != nil {
+		if errors.Is(err, store.ErrVersionMismatch) {
+			w.WriteHeader(http.StatusConflict)
+			h.sendJSON(w, httpControlResponse{
+				Success:   false,
+				Message:   "Optimistic concurrency conflict: version mismatch",
+				Version:   h.control.GetStoreVersion(r.Context()),
+				Timestamp: time.Now().Unix(),
+				ErrorCode: "VERSION_MISMATCH",
+			})
+			return
+		}
 		h.sendJSON(w, httpControlResponse{
 			Success:   false,
 			Message:   fmt.Sprintf("Failed to update config: %v", err),
+			Version:   h.control.GetStoreVersion(r.Context()),
 			Timestamp: time.Now().Unix(),
 			ErrorCode: "UPDATE_FAILED",
 		})
@@ -160,6 +179,7 @@ func (h *RESTHandler) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, httpControlResponse{
 		Success:   true,
 		Message:   "Configuration updated and broadcasted successfully",
+		Version:   h.control.GetStoreVersion(r.Context()),
 		Timestamp: time.Now().Unix(),
 	})
 }
@@ -167,6 +187,7 @@ func (h *RESTHandler) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 type httpListResponse struct {
 	Success    bool   `json:"success"`
 	JsonConfig string `json:"json_config"`
+	Version    uint64 `json:"version,omitempty"`
 	Timestamp  int64  `json:"timestamp"`
 }
 
@@ -180,6 +201,7 @@ func (h *RESTHandler) handleListConfig(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.sendJSON(w, httpListResponse{
 			Success:   false,
+			Version:   h.control.GetStoreVersion(r.Context()),
 			Timestamp: time.Now().Unix(),
 		})
 		return
@@ -189,6 +211,7 @@ func (h *RESTHandler) handleListConfig(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.sendJSON(w, httpListResponse{
 			Success:   false,
+			Version:   h.control.GetStoreVersion(r.Context()),
 			Timestamp: time.Now().Unix(),
 		})
 		return
@@ -197,6 +220,7 @@ func (h *RESTHandler) handleListConfig(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, httpListResponse{
 		Success:    true,
 		JsonConfig: string(data),
+		Version:    h.control.GetStoreVersion(r.Context()),
 		Timestamp:  time.Now().Unix(),
 	})
 }
@@ -253,6 +277,7 @@ type httpStatusResponse struct {
 	Healthy       bool     `json:"healthy"`
 	Status        string   `json:"status"`
 	Version       string   `json:"version"`
+	StoreVersion  uint64   `json:"store_version,omitempty"`
 	Timestamp     int64    `json:"timestamp"`
 	ActiveClients int32    `json:"active_clients"`
 	ClientNames   []string `json:"client_names"`
@@ -278,6 +303,7 @@ func (h *RESTHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Healthy:       statusInfo.Healthy,
 		Status:        statusInfo.Status,
 		Version:       statusInfo.Version,
+		StoreVersion:  statusInfo.StoreVersion,
 		Timestamp:     statusInfo.Timestamp,
 		ActiveClients: int32(statusInfo.ActiveClients),
 		ClientNames:   statusInfo.ClientNames,

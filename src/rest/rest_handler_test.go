@@ -77,6 +77,17 @@ func (m *mockControl) SetConfig(ctx context.Context, section, key, value string)
 	return nil
 }
 
+func (m *mockControl) SetConfigWithOCC(ctx context.Context, section, key, value string, expectedVersion uint64) error {
+	if expectedVersion == 999 {
+		return store.ErrVersionMismatch
+	}
+	return m.SetConfig(ctx, section, key, value)
+}
+
+func (m *mockControl) GetStoreVersion(ctx context.Context) uint64 {
+	return m.status.StoreVersion
+}
+
 func (m *mockControl) DeleteConfig(ctx context.Context, section, key string) error {
 	m.deleteRequests = append(m.deleteRequests, struct{ section, key string }{section, key})
 	return nil
@@ -256,5 +267,29 @@ func TestHandlerContractsEndpoint(t *testing.T) {
 	contracts, _ := env["contracts"].([]interface{})
 	if len(contracts) < 4 {
 		t.Fatalf("expected >=4 contract types (rest, grpc, safesocket-protobuf, teleremote), got %d", len(contracts))
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestHandler_SetConfig_OCCConflict(t *testing.T) {
+	control := &mockControl{}
+	handler := newTestHandler(t, control)
+
+	body := bytes.NewBufferString(`{"section":"app","key":"mode","value":"prod","expected_version":999}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/config/set", body)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected status 409 Conflict for OCC mismatch, got %d", rr.Code)
+	}
+
+	var resp httpControlResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.ErrorCode != "VERSION_MISMATCH" {
+		t.Fatalf("expected error code VERSION_MISMATCH, got %s", resp.ErrorCode)
 	}
 }

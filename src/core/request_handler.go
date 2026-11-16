@@ -18,6 +18,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/Bastien-Antigravity/config-server/src/helpers"
@@ -44,6 +45,7 @@ func ProcessRequest(data []byte, s *store.Store, broadcast func(config.ConfigMsg
 	switch req.Command {
 	case config.ConfigMsg_GET_SYNC, config.ConfigMsg_FULL_REFRESH:
 		resp.Command = req.Command
+		resp.Version = int32(s.GetVersion())
 		payload, _ := json.Marshal(s.Get())
 		resp.Payload = payload
 
@@ -55,20 +57,126 @@ func ProcessRequest(data []byte, s *store.Store, broadcast func(config.ConfigMsg
 			break
 		}
 
-		err := s.UpdateAtomic(func(current store.ConfigMap) (store.ConfigMap, error) {
-			return helpers.ApplyUpdates(current, updates), nil
-		})
+		hasDeletion := false
+		for _, kv := range updates {
+			for _, v := range kv {
+				if v == "__DELETED__" {
+					hasDeletion = true
+					break
+				}
+			}
+			if hasDeletion {
+				break
+			}
+		}
+
+		var err error
+		if req.Version > 0 {
+			err = s.UpdateAtomicWithOCC(uint64(req.Version), func(current store.ConfigMap) (store.ConfigMap, error) {
+				return helpers.ApplyUpdates(current, updates), nil
+			})
+		} else {
+			err = s.UpdateAtomic(func(current store.ConfigMap) (store.ConfigMap, error) {
+				return helpers.ApplyUpdates(current, updates), nil
+			})
+		}
 
 		if err == nil {
 			resp.Command = config.ConfigMsg_ACK
-			payload, _ := json.Marshal(updates)
+			resp.Version = int32(s.GetVersion())
 
-			// Asynchronous Rituals: Broadcast and Persist
-			go broadcast(config.ConfigMsg_BROADCAST_SYNC, payload)
-			triggerSave()
+			if triggerSave != nil {
+				triggerSave()
+			}
+			if broadcast != nil {
+				if hasDeletion {
+					fullPayload, _ := json.Marshal(s.Get())
+					go broadcast(config.ConfigMsg_FULL_REFRESH, fullPayload)
+				} else {
+					payload, _ := json.Marshal(updates)
+					go broadcast(config.ConfigMsg_BROADCAST_SYNC, payload)
+				}
+			}
+		} else if errors.Is(err, store.ErrVersionMismatch) {
+			resp.Command = config.ConfigMsg_ERROR
+			resp.Version = int32(s.GetVersion())
+			resp.Payload = []byte("version mismatch conflict")
 		} else {
 			resp.Command = config.ConfigMsg_ERROR
 			resp.Payload = []byte("atomic update failed")
+		}
+
+	case config.ConfigMsg_DELETE_SYNC:
+		var deletions map[string][]string
+		if err := json.Unmarshal(req.Payload, &deletions); err != nil {
+			// Also attempt to unmarshal map[string]map[string]string for wire flexibility
+			var mapDeletions map[string]map[string]string
+			if errMap := json.Unmarshal(req.Payload, &mapDeletions); errMap == nil {
+				deletions = make(map[string][]string)
+				for sec, kv := range mapDeletions {
+					for k := range kv {
+						deletions[sec] = append(deletions[sec], k)
+					}
+				}
+			} else {
+				resp.Command = config.ConfigMsg_ERROR
+				resp.Payload = []byte("failed to decode JSON deletions: expected map[string][]string or map[string]map[string]string")
+				break
+			}
+		}
+
+		var err error
+		if req.Version > 0 {
+			err = s.UpdateAtomicWithOCC(uint64(req.Version), func(sandbox store.ConfigMap) (store.ConfigMap, error) {
+				for section, keys := range deletions {
+					if secMap, ok := sandbox[section]; ok {
+						if len(keys) == 0 {
+							delete(sandbox, section)
+						} else {
+							for _, k := range keys {
+								delete(secMap, k)
+							}
+						}
+					}
+				}
+				return sandbox, nil
+			})
+		} else {
+			err = s.UpdateAtomic(func(sandbox store.ConfigMap) (store.ConfigMap, error) {
+				for section, keys := range deletions {
+					if secMap, ok := sandbox[section]; ok {
+						if len(keys) == 0 {
+							delete(sandbox, section)
+						} else {
+							for _, k := range keys {
+								delete(secMap, k)
+							}
+						}
+					}
+				}
+				return sandbox, nil
+			})
+		}
+
+		if err == nil {
+			resp.Command = config.ConfigMsg_ACK
+			resp.Version = int32(s.GetVersion())
+
+			if triggerSave != nil {
+				triggerSave()
+			}
+			// Broadcast FULL_REFRESH so all clients immediately purge deleted keys
+			fullPayload, _ := json.Marshal(s.Get())
+			if broadcast != nil {
+				go broadcast(config.ConfigMsg_FULL_REFRESH, fullPayload)
+			}
+		} else if errors.Is(err, store.ErrVersionMismatch) {
+			resp.Command = config.ConfigMsg_ERROR
+			resp.Version = int32(s.GetVersion())
+			resp.Payload = []byte("version mismatch conflict")
+		} else {
+			resp.Command = config.ConfigMsg_ERROR
+			resp.Payload = []byte("atomic delete failed")
 		}
 
 	default:

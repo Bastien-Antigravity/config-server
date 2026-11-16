@@ -136,6 +136,58 @@ func TestProcessRequest_PutSync_Success(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 
+func TestProcessRequest_PutSync_SentinelDeletion(t *testing.T) {
+	s := store.NewStore()
+	s.Replace(store.ConfigMap{
+		"app": {"env": "prod", "deprecated_key": "old"},
+	})
+
+	updates := store.ConfigMap{
+		"app": {"deprecated_key": "__DELETED__"},
+	}
+	updateBytes, _ := json.Marshal(updates)
+
+	req := &config.ConfigMsg{
+		Command: config.ConfigMsg_PUT_SYNC,
+		Payload: updateBytes,
+	}
+	data, _ := proto.Marshal(req)
+
+	var mu sync.Mutex
+	var broadcastCmd config.ConfigMsg_Cmd
+
+	broadcastFn := func(cmd config.ConfigMsg_Cmd, payload []byte) {
+		mu.Lock()
+		defer mu.Unlock()
+		broadcastCmd = cmd
+	}
+
+	resp, err := ProcessRequest(data, s, broadcastFn, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Command != config.ConfigMsg_ACK {
+		t.Fatalf("expected ACK, got %v", resp.Command)
+	}
+
+	// Verify key was deleted
+	if _, exists := s.Get()["app"]["deprecated_key"]; exists {
+		t.Fatalf("expected deprecated_key to be deleted via sentinel")
+	}
+	if s.Get()["app"]["env"] != "prod" {
+		t.Fatalf("expected env to remain prod")
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if broadcastCmd != config.ConfigMsg_FULL_REFRESH {
+		t.Fatalf("expected broadcast command FULL_REFRESH on sentinel deletion, got %v", broadcastCmd)
+	}
+}
+
+// -----------------------------------------------------------------------------
+
 func TestProcessRequest_PutSync_InvalidJSON(t *testing.T) {
 	s := store.NewStore()
 
@@ -178,5 +230,135 @@ func TestProcessRequest_MalformedProtobuf(t *testing.T) {
 	_, err := ProcessRequest([]byte("not-a-protobuf"), s, nil, nil)
 	if err == nil {
 		t.Fatalf("expected protobuf unmarshal error")
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestProcessRequest_DeleteSync(t *testing.T) {
+	s := store.NewStore()
+	s.Replace(store.ConfigMap{
+		"db": {
+			"host": "localhost",
+			"port": "5432",
+			"user": "postgres",
+		},
+		"cache": {
+			"host": "localhost",
+		},
+	})
+
+	deletions := map[string][]string{
+		"db":    {"port", "user"},
+		"cache": {}, // empty slice deletes entire section
+	}
+	delBytes, _ := json.Marshal(deletions)
+
+	req := &config.ConfigMsg{
+		Command: config.ConfigMsg_DELETE_SYNC,
+		Payload: delBytes,
+	}
+	data, _ := proto.Marshal(req)
+
+	var mu sync.Mutex
+	var broadcastCmd config.ConfigMsg_Cmd
+	saved := false
+
+	broadcastFn := func(cmd config.ConfigMsg_Cmd, payload []byte) {
+		mu.Lock()
+		defer mu.Unlock()
+		broadcastCmd = cmd
+	}
+	saveFn := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		saved = true
+	}
+
+	resp, err := ProcessRequest(data, s, broadcastFn, saveFn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || resp.Command != config.ConfigMsg_ACK {
+		t.Fatalf("expected ACK command, got %+v", resp)
+	}
+	if resp.Version == 0 {
+		t.Fatalf("expected non-zero version in response")
+	}
+
+	// Verify store deletions
+	cfg := s.Get()
+	if _, exists := cfg["cache"]; exists {
+		t.Fatalf("expected cache section to be deleted, got %+v", cfg["cache"])
+	}
+	if _, exists := cfg["db"]["port"]; exists {
+		t.Fatalf("expected db.port to be deleted")
+	}
+	if _, exists := cfg["db"]["user"]; exists {
+		t.Fatalf("expected db.user to be deleted")
+	}
+	if cfg["db"]["host"] != "localhost" {
+		t.Fatalf("expected db.host to remain localhost, got %s", cfg["db"]["host"])
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if !saved {
+		t.Fatalf("expected saveFn to be called synchronously")
+	}
+	if broadcastCmd != config.ConfigMsg_FULL_REFRESH {
+		t.Fatalf("expected broadcast command FULL_REFRESH, got %v", broadcastCmd)
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestProcessRequest_PutSync_OCC(t *testing.T) {
+	s := store.NewStore()
+	s.Replace(store.ConfigMap{
+		"app": {"env": "dev"},
+	})
+	initialVersion := s.GetVersion()
+
+	// Update with wrong expected version
+	reqWrong := &config.ConfigMsg{
+		Command: config.ConfigMsg_PUT_SYNC,
+		Payload: []byte(`{"app":{"env":"prod"}}`),
+		Version: int32(initialVersion + 99),
+	}
+	dataWrong, _ := proto.Marshal(reqWrong)
+
+	respWrong, err := ProcessRequest(dataWrong, s, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if respWrong.Command != config.ConfigMsg_ERROR {
+		t.Fatalf("expected ERROR command for OCC mismatch, got %v", respWrong.Command)
+	}
+	if string(respWrong.Payload) != "version mismatch conflict" {
+		t.Fatalf("unexpected error payload: %s", string(respWrong.Payload))
+	}
+	if s.Get()["app"]["env"] != "dev" {
+		t.Fatalf("store state should remain unchanged")
+	}
+
+	// Update with correct expected version
+	reqCorrect := &config.ConfigMsg{
+		Command: config.ConfigMsg_PUT_SYNC,
+		Payload: []byte(`{"app":{"env":"prod"}}`),
+		Version: int32(initialVersion),
+	}
+	dataCorrect, _ := proto.Marshal(reqCorrect)
+
+	respCorrect, err := ProcessRequest(dataCorrect, s, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if respCorrect.Command != config.ConfigMsg_ACK {
+		t.Fatalf("expected ACK command for matching OCC version, got %v", respCorrect.Command)
+	}
+	if s.Get()["app"]["env"] != "prod" {
+		t.Fatalf("store state should be updated to prod")
 	}
 }

@@ -20,14 +20,32 @@ import (
 
 // -----------------------------------------------------------------------------
 
+// ApplyUpdates performs an efficient granular merge between current configuration
+// and incoming updates, cloning only the touched sections while structurally sharing untouched sections.
+// It also supports key deletions via the "__DELETED__" sentinel value.
 func ApplyUpdates(current, updates store.ConfigMap) store.ConfigMap {
-	newConf := store.DeepCopy(current)
+	newConf := make(store.ConfigMap, len(current)+len(updates))
+	for sec, kv := range current {
+		newConf[sec] = kv
+	}
+
 	for section, kv := range updates {
-		if _, exists := newConf[section]; !exists {
-			newConf[section] = make(map[string]string)
+		existingSec := newConf[section]
+		clonedSec := make(map[string]string, len(existingSec)+len(kv))
+		for k, v := range existingSec {
+			clonedSec[k] = v
 		}
 		for k, v := range kv {
-			newConf[section][k] = v
+			if v == "__DELETED__" {
+				delete(clonedSec, k)
+			} else {
+				clonedSec[k] = v
+			}
+		}
+		if len(clonedSec) == 0 {
+			delete(newConf, section)
+		} else {
+			newConf[section] = clonedSec
 		}
 	}
 	return newConf

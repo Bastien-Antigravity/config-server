@@ -53,20 +53,22 @@ The server delegates low-level networking to the **[safe-socket](https://github.
   - **Reconnection**: Handled by the client-side of the library.
 
 ### 2. Server Logic (`src/server`)
-- **Lifecycle**: `Server.Start()` initializes the listener (`atomic.Pointer[factory.Socket]`) and starts the background `persistenceWorker`.
-- **Broadcast System**: Uses a lock-free `atomic.Pointer[map[string]*clientMailbox]` listener table and a **Per-Client Mailbox Pattern** with tight buffers (3 messages max). `Broadcast()` and `getRegistryPayload()` dereference the immutable listener map directly with zero mutex acquisition. Outgoing writes are handled in dedicated goroutines to prevent slow clients from blocking the server.
+- **Lifecycle**: `Server.Start()` initializes the listener (`atomic.Pointer[factory.Socket]`) and starts the 1-second background `persistenceWorker`.
+- **Broadcast System**: Uses a lock-free `atomic.Pointer[map[string]*clientMailbox]` listener table and a **Per-Client Mailbox Pattern** (buffer: 3 messages). `Broadcast()` and `getRegistryPayload()` dereference the immutable listener map directly with zero mutex acquisition. Outgoing writes are handled in dedicated goroutines to prevent slow clients from blocking the server. If a client mailbox transiently overflows, the server sets a `needsRefresh` flag and elevates the next delivery to a complete `FULL_REFRESH` snapshot, gracefully resynchronizing the client without disruptive socket teardowns or peer reconnect storms.
 - **Identity Management**: Uses stable `Service-IP` identification. `addListener` and `removeListener` serialize map Copy-On-Write updates via `writeMu` and use pointer comparison to protect against "ghost disconnections" during rapid service restarts.
 
 ### 3. Core Logic (`src/core`)
-- **Request Processing**: `ProcessRequest` acts as the dispatcher. It deserializes the `ConfigMsg` (Protobuf) and interacts with the Store.
-- **Asynchronous Rituals**: Commands like `PUT_SYNC` trigger non-blocking broadcasts and debounced persistence saving.
+- **Request Processing**: `ProcessRequest` acts as the dispatcher. It deserializes `ConfigMsg` (Protobuf) and interacts with the Store, supporting `GET_SYNC`, `PUT_SYNC`, `DELETE_SYNC`, and `FULL_REFRESH`.
+- **Lean Deletions**: Deletions can be executed either via dedicated `DELETE_SYNC` or by passing a `"__DELETED__"` sentinel in standard `PUT_SYNC` delta payloads. Detecting a deletion automatically triggers a `FULL_REFRESH` broadcast so clients purge removed keys.
+- **Ultra-Fast Persistence & Ordering**: In-memory updates acknowledge in sub-millisecond time and mark state as `dirty`, flushed by the 1-second background worker. Responses carry monotonic revision numbers (`ConfigMsg.Version`) for client sequence gap detection.
 
 ### 4. Storage Layer (`src/store`)
-- **Data Structure**: `ConfigMap` (`map[string]map[string]string`) held in an `atomic.Pointer[ConfigMap]`.
-- **Concurrency**:
+- **Data Structure**: `ConfigMap` (`map[string]map[string]string`) held in an `atomic.Pointer[ConfigMap]`, paired with an atomic `version atomic.Uint64` revision counter.
+- **Concurrency & Path-Copying COW**:
   - Uses `atomic.Pointer[ConfigMap]` for 100% lock-free reads and `sync.Mutex` (`writeMu`) to serialize Copy-On-Write mutations.
-  - **Copy-On-Write (COW)**: `Get()` executes `s.config.Load()` for zero-lock, zero-allocation direct access (fast path). `UpdateAtomic()` and `Set()` clone a sandbox copy under `writeMu` and atomically swap the pointer (`s.config.Store(&newConfig)`), ensuring readers are never exposed to intermediate states.
-- **Persistence**: A debounced background worker (`persistenceWorker`) writes the state to disk at most once every 5 seconds if marked as `dirty`.
+  - **Path-Copying Granular Mutations**: `store.UpdateSection()` clones only the specific section map being modified, structurally sharing all other untouched sections across versions to minimize memory allocations.
+  - **Granular ApplyUpdates**: Delta merges clone only sections present in the delta payload, retaining shared pointers for all untouched sections.
+- **Persistence**: Debounced 1-second atomic worker flushes dirty state via `pm.Save()`, while synchronous save (`SaveSync()`) is invoked on graceful shutdown via `toolbox_lifecycle.Manager`.
 
 ### 5. Unified Controller Interface (`src/core/controller.go`)
 To prevent package cycles and maintain protocol-agnostic business logic, all management actions are defined inside the `core.ConfigController` interface:

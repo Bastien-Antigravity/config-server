@@ -28,17 +28,22 @@ go test -v ./...
 
 ## Internal Architecture & Subsystems
 1. **Core & Store (`src/core`, `src/store`)**:
-   - In-memory store using `atomic.Pointer[ConfigMap]` lock-free Copy-On-Write (COW) reads (`Get()`) and serialized `sync.Mutex` write transactions (`Set()`, `UpdateAtomic()`).
-   - Debounced file persistence worker flushing state to `config_store.json` (or path passed via `--store` flag).
+   - In-memory store using `atomic.Pointer[ConfigMap]` lock-free Copy-On-Write (COW) reads (`Get()`) with path-copying `UpdateSection` on the hot path and serialized `sync.Mutex` write transactions (`Set()`, `UpdateAtomic()`, `UpdateAtomicWithOCC()`).
+   - Monotonic revision counter (`s.version atomic.Uint64`) incremented on every state mutation, enabling client sequence gap detection.
+   - Debounced file persistence worker (1-second ticker) flushing dirty state to `config_store.json`, with `SaveSync()` reserved for graceful shutdown and administrative flush.
 2. **Network Layer (`src/server`)**:
    - Built on `safe-socket` (`tcp-hello` profile) with handshake verification (`Name`/`Group`) and 10-minute idle timeouts.
-   - Lock-free `atomic.Pointer[map[string]*clientMailbox]` listener map for zero-mutex `Broadcast()` and `getRegistryPayload()`, paired with per-client non-blocking mailbox buffers and dedicated write goroutines.
-3. **Control Interfaces (`src/grpc_control`, `src/rest`)**:
+   - Lock-free `atomic.Pointer[map[string]*clientMailbox]` listener map for zero-mutex `Broadcast()` and `getRegistryPayload()`, paired with per-client non-blocking mailbox buffers (buffer: 3 messages) and dedicated write goroutines.
+   - Gentle overflow recovery: if a consumer buffer transiently saturates, the server marks `needsRefresh = true` and elevates the next delivery to `FULL_REFRESH`, gently recovering parity without dropping the socket connection.
+3. **Consistency & Deletion Subsystems**:
+   - **Opt-in OCC**: When incoming `PUT_SYNC` / `DELETE_SYNC` carries `version > 0`, the server enforces Optimistic Concurrency Control, returning `Cmd_ERROR ("version mismatch conflict")` or HTTP 409 Conflict on divergence. When `version == 0` (default), it executes fast Last-Write-Wins (LWW) for 100% backward compatibility.
+   - **Clean Deletion Convergence**: Deletions via `DELETE_SYNC` or `"__DELETED__"` sentinel in `PUT_SYNC` automatically elevate broadcasts from delta `BROADCAST_SYNC` to a complete `FULL_REFRESH` snapshot, ensuring fleet-wide key purging.
+4. **Control Interfaces (`src/grpc_control`, `src/rest`)**:
    - `grpc_control`: Exposes `ConfigService` for gRPC sync and update streams.
-   - `rest`: Serves REST routes (`/api/v1/config`, `/api/v1/contracts`, `/api/v1/health`) and hosts OpenMFE web assets (`/static/js/mfe-loader.js` with `#config-tabs-bar` Exchange Contract tabs).
-4. **OpenMFE Dynamic Registration & Exchange Contracts**:
+   - `rest`: Serves REST routes (`/api/v1/config`, `/api/v1/contracts`, `/api/v1/health`) with `expected_version` support, and hosts OpenMFE web assets (`/static/js/mfe-loader.js` with `#config-tabs-bar` Exchange Contract tabs).
+5. **OpenMFE Dynamic Registration & Exchange Contracts**:
    - Auto-registers with `web-interface` at `http://<webAddr>/api/v1/register` with exponential backoff on startup, attaching authoritative `ExchangeContract` schemas (`config_server.proto` + `protoreflect` ConfigMsg IDL, SafeSocket TCP sync, REST API, TeleRemote client).
-5. **Tele-Remote Integration (`src/telegram`)**:
+6. **Tele-Remote Integration (`src/telegram`)**:
    - Binds to `tele-remote` for live menu controls and configuration tweak callbacks.
 
 ## AI Development & Integration Guidelines
@@ -53,3 +58,5 @@ go test -v ./...
 5. **Section Dividers**: Use `// -----------------------------------------------------------------------------` between exported methods and major sections.
 6. **Graceful Shutdown**: All long-running workers (TCP server, gRPC service, persistence worker) must be registered with `toolbox_lifecycle.Manager` to flush state cleanly on `SIGINT`/`SIGTERM`.
 7. **L1 Resilience & Infinite OpenMFE Registration Contract**: OpenMFE registration to `web-interface` must run in a non-blocking background goroutine with infinite retries (`MaxRetries: -1`), exponential backoff, and dynamic address resolution via `appConfig.GetListenAddr("web_interface")`. Never terminate or timeout registration with a finite retry counter.
+8. **OCC & Versioning Contract**: Mutating endpoints must respect `msg.Version` / `expected_version`: `version == 0` runs fast Last-Write-Wins (LWW) via `UpdateSection`; `version > 0` enforces OCC check via `UpdateAtomicWithOCC`. Outgoing broadcasts must always populate `msg.Version` with the current monotonic revision number.
+9. **Deletion & Convergence Contract**: Deletions must trigger a `FULL_REFRESH` broadcast rather than delta merges, ensuring all client in-memory stores purge removed keys completely.

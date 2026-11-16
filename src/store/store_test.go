@@ -104,6 +104,46 @@ func TestStore_UpdateAtomic_SuccessAndRollback(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 
+func TestStore_UpdateSection(t *testing.T) {
+	s := NewStore()
+	s.Replace(ConfigMap{
+		"sectionA": {"key1": "val1"},
+		"sectionB": {"key2": "val2"},
+	})
+
+	err := s.UpdateSection("sectionA", func(sec map[string]string) error {
+		sec["key1"] = "val1_updated"
+		sec["newKey"] = "newVal"
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cfg := s.Get()
+	if cfg["sectionA"]["key1"] != "val1_updated" || cfg["sectionA"]["newKey"] != "newVal" {
+		t.Fatalf("expected updated sectionA values")
+	}
+	if cfg["sectionB"]["key2"] != "val2" {
+		t.Fatalf("expected sectionB to be preserved")
+	}
+
+	// Test section deletion when all keys removed
+	err = s.UpdateSection("sectionA", func(sec map[string]string) error {
+		delete(sec, "key1")
+		delete(sec, "newKey")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, exists := s.Get()["sectionA"]; exists {
+		t.Fatalf("expected sectionA to be deleted when empty")
+	}
+}
+
+// -----------------------------------------------------------------------------
+
 func TestStore_DeepCopyNilSafe(t *testing.T) {
 	copied := DeepCopy(nil)
 	if copied == nil || len(copied) != 0 {
@@ -150,4 +190,57 @@ func TestStore_ConcurrentStress(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+// -----------------------------------------------------------------------------
+
+func TestStore_VersionAndOCC(t *testing.T) {
+	s := NewStore()
+	if s.GetVersion() != 0 {
+		t.Fatalf("expected initial version 0, got %d", s.GetVersion())
+	}
+
+	s.Replace(ConfigMap{"sec": {"k": "v"}})
+	if s.GetVersion() != 1 {
+		t.Fatalf("expected version 1 after Replace, got %d", s.GetVersion())
+	}
+
+	// Successful update
+	err := s.UpdateAtomic(func(sandbox ConfigMap) (ConfigMap, error) {
+		sandbox["sec"]["k"] = "v2"
+		return sandbox, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.GetVersion() != 2 {
+		t.Fatalf("expected version 2, got %d", s.GetVersion())
+	}
+
+	// Successful update with matching expectedVersion
+	err = s.UpdateAtomicWithOCC(2, func(sandbox ConfigMap) (ConfigMap, error) {
+		sandbox["sec"]["k"] = "v3"
+		return sandbox, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.GetVersion() != 3 {
+		t.Fatalf("expected version 3, got %d", s.GetVersion())
+	}
+
+	// OCC conflict with mismatched expectedVersion
+	err = s.UpdateAtomicWithOCC(2, func(sandbox ConfigMap) (ConfigMap, error) {
+		sandbox["sec"]["k"] = "v4"
+		return sandbox, nil
+	})
+	if !errors.Is(err, ErrVersionMismatch) {
+		t.Fatalf("expected ErrVersionMismatch, got %v", err)
+	}
+	if s.GetVersion() != 3 {
+		t.Fatalf("version should remain 3 after conflict, got %d", s.GetVersion())
+	}
+	if s.Get()["sec"]["k"] != "v3" {
+		t.Fatalf("store state should remain v3, got %s", s.Get()["sec"]["k"])
+	}
 }
