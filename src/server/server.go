@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Bastien-Antigravity/config-server/src/helpers"
 	"github.com/Bastien-Antigravity/config-server/src/store"
 	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 
@@ -218,7 +217,6 @@ func (s *Server) ReloadConfig(ctx context.Context) error {
 
 	if s.Persistence != nil {
 		if persisted, err := s.Persistence.Load(); err == nil && persisted != nil {
-			persisted = helpers.SeedCapabilities(persisted, s.AppConfig.Capabilities)
 			s.Store.Replace(persisted)
 		}
 	}

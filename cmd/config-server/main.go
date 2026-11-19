@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 
 	"github.com/Bastien-Antigravity/config-server/src/grpc_control"
-	"github.com/Bastien-Antigravity/config-server/src/helpers"
 	"github.com/Bastien-Antigravity/config-server/src/rest"
 	"github.com/Bastien-Antigravity/config-server/src/server"
 	"github.com/Bastien-Antigravity/config-server/src/store"
@@ -74,7 +73,6 @@ func main() {
 		appLogger.Warning("Failed to load config persistence: %v", err)
 		initialConfig = make(store.ConfigMap)
 	}
-	initialConfig = helpers.SeedCapabilities(initialConfig, appConfig.Capabilities)
 
 	configStore := store.NewStore()
 	configStore.Replace(initialConfig)

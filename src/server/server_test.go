@@ -17,17 +17,19 @@ package server
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/store"
-	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 
+	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
 	dist_core "github.com/Bastien-Antigravity/distributed-config/src/core"
 	schemas "github.com/Bastien-Antigravity/distributed-config/src/schemas"
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -45,7 +47,8 @@ func (m *mockLogger) Critical(format string, args ...any) {}
 
 // -----------------------------------------------------------------------------
 
-func createTestServer() *Server {
+func createTestServer(t *testing.T) *Server {
+	t.Helper()
 	coreCfg := &dist_core.Config{
 		Common: dist_core.CommonConfig{
 			Name:     "common",
@@ -67,7 +70,7 @@ func createTestServer() *Server {
 
 	s := store.NewStore()
 	logger := &mockLogger{}
-	pm := store.NewPersistenceManager("test_store.json", logger)
+	pm := store.NewPersistenceManager(filepath.Join(t.TempDir(), "test_store.json"), logger)
 
 	return NewServer(appCfg, logger, s, pm)
 }
@@ -75,7 +78,7 @@ func createTestServer() *Server {
 // -----------------------------------------------------------------------------
 
 func TestServer_AddAndRemoveListener(t *testing.T) {
-	srv := createTestServer()
+	srv := createTestServer(t)
 
 	mb1 := &clientMailbox{name: "worker-127.0.0.1", send: make(chan []byte, 3)}
 
@@ -101,7 +104,7 @@ func TestServer_AddAndRemoveListener(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestServer_GetConfig_StoreOnly(t *testing.T) {
-	srv := createTestServer()
+	srv := createTestServer(t)
 	ctx := context.Background()
 
 	// 1. Initial query before any dynamic override exists
@@ -139,7 +142,7 @@ func TestServer_GetConfig_StoreOnly(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestServer_GetStatus(t *testing.T) {
-	srv := createTestServer()
+	srv := createTestServer(t)
 	ctx := context.Background()
 
 	status, err := srv.GetStatus(ctx)
@@ -157,7 +160,7 @@ func TestServer_GetStatus(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestServer_ConcurrentOnUpdateAndBroadcast(t *testing.T) {
-	srv := createTestServer()
+	srv := createTestServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
@@ -199,7 +202,7 @@ func TestServer_ConcurrentOnUpdateAndBroadcast(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestServer_SuperseededListenerClosesMailbox(t *testing.T) {
-	srv := createTestServer()
+	srv := createTestServer(t)
 
 	mb1 := &clientMailbox{name: "worker-1", send: make(chan []byte, 3)}
 	mb2 := &clientMailbox{name: "worker-1", send: make(chan []byte, 3)}
@@ -227,7 +230,7 @@ func TestServer_SuperseededListenerClosesMailbox(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestServer_BroadcastFullRefreshOnDelete(t *testing.T) {
-	srv := createTestServer()
+	srv := createTestServer(t)
 	ctx := context.Background()
 
 	mb := &clientMailbox{name: "worker-test", send: make(chan []byte, 64)}
@@ -281,7 +284,7 @@ func TestServer_BroadcastFullRefreshOnDelete(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestServer_OverflowElevatesToFullRefresh(t *testing.T) {
-	srv := createTestServer()
+	srv := createTestServer(t)
 
 	mb := &clientMailbox{
 		name: "slow-worker",
@@ -326,7 +329,7 @@ func TestServer_OverflowElevatesToFullRefresh(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestServer_SaveSyncAndVersionIncrement(t *testing.T) {
-	srv := createTestServer()
+	srv := createTestServer(t)
 	ctx := context.Background()
 
 	// 1. Initial SetConfig
