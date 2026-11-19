@@ -21,7 +21,7 @@ COPY . .
 
 # Ensure dependencies are tidy and build binary
 RUN go mod tidy && \
-    VERSION=$(cat VERSION.txt 2>/dev/null || echo "0.0.1") && \
+    VERSION=$(cat VERSION.txt) && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X 'github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/version.BuildVersion=${VERSION}'" -o /config-server-bin ./cmd/config-server
 
 # === RUNTIME STAGE ===
