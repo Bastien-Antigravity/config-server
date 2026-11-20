@@ -3,14 +3,19 @@
 # Build, test, and lifecycle automation for config-server Go daemon.
 # =============================================================================
 
-VERSION := $(shell cat VERSION.txt 2>/dev/null || echo "0.0.1")
+VERSION := $(strip $(shell cat VERSION.txt 2>/dev/null))
+$(if $(VERSION),,$(error VERSION.txt is missing or empty))
 
-.PHONY: all build test race vet version clean
+.PHONY: all build test verify-standalone race vet version clean
 
 all: build
 
 version:
 	@echo $(VERSION)
+
+verify-standalone:
+	@echo "Verifying standalone Go build (GOWORK=off)..."
+	GOWORK=off go build ./...
 
 build:
 	@echo "Building config-server (version $(VERSION))..."
