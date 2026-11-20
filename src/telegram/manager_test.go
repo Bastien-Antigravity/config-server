@@ -39,12 +39,12 @@ func (m *mockLogger) Critical(format string, args ...any) {}
 // -----------------------------------------------------------------------------
 
 type mockController struct {
-	config       store.ConfigMap
-	persisted    bool
-	reloaded     bool
-	lastSetKey   string
-	lastSetVal   string
-	lastDelKey   string
+	config     store.ConfigMap
+	persisted  bool
+	reloaded   bool
+	lastSetKey string
+	lastSetVal string
+	lastDelKey string
 }
 
 func (m *mockController) GetConfig(ctx context.Context, section, key string) (string, bool, error) {

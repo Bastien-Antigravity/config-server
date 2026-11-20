@@ -109,7 +109,7 @@ func main() {
 	lm := toolbox_lifecycle.NewManagerWithLogger(appLogger)
 
 	// 6. Register config-server specification with web-interface dynamically (linked to lifecycle)
-	mfeUrl := fmt.Sprintf("http://%s/static/js/mfe-loader.js", restAddr)
+	mfeUrl := toolbox_spec.ResolveMFEURL(appConfig, fmt.Sprintf("http://%s/static/js/mfe-loader.js", restAddr))
 	_, tcpPort, _ := net.SplitHostPort(addr)
 	_, restPortStr, _ := net.SplitHostPort(restAddr)
 	grpcAddr, _ := appConfig.GetGRPCListenAddr("config_server")

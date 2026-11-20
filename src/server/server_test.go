@@ -24,11 +24,11 @@ import (
 
 	"github.com/Bastien-Antigravity/config-server/src/store"
 
-	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 	distributed_config "github.com/Bastien-Antigravity/distributed-config"
 	dist_core "github.com/Bastien-Antigravity/distributed-config/src/core"
 	schemas "github.com/Bastien-Antigravity/distributed-config/src/schemas"
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
+	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 
 	"google.golang.org/protobuf/proto"
 )

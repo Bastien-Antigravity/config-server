@@ -120,18 +120,18 @@ func BuildExchangeContracts(appConfig *toolbox_config.AppConfig, clientNames []s
 			},
 		},
 		{
-			ID:           "grpc",
-			Type:         "gRPC / Protobuf",
-			TabLabel:     "gRPC Control",
-			Icon:         "fa-code",
-			Direction:    "inbound",
-			Transport:    "HTTP/2 + Protobuf",
-			Address:      toolbox_spec.DisplayAddress(grpcAddr),
-			Port:         toolbox_spec.ResolveContractPort(grpcAddr),
-			Framing:      "Length-prefixed HTTP/2 DATA frames (ConfigControlService)",
-			Auth:         "Internal gRPC insecure/TLS transport",
-			Summary:      "Exposes ConfigControlService RPCs alongside standard grpc.health.v1 Health checks.",
-			Source:       "config-server/src/grpc_control/config_server.proto (go:embed)",
+			ID:        "grpc",
+			Type:      "gRPC / Protobuf",
+			TabLabel:  "gRPC Control",
+			Icon:      "fa-code",
+			Direction: "inbound",
+			Transport: "HTTP/2 + Protobuf",
+			Address:   toolbox_spec.DisplayAddress(grpcAddr),
+			Port:      toolbox_spec.ResolveContractPort(grpcAddr),
+			Framing:   "Length-prefixed HTTP/2 DATA frames (ConfigControlService)",
+			Auth:      "Internal gRPC insecure/TLS transport",
+			Summary:   "Exposes ConfigControlService RPCs alongside standard grpc.health.v1 Health checks.",
+			Source:    "config-server/src/grpc_control/config_server.proto (go:embed)",
 			Peers: []toolbox_spec.ContractPeer{
 				{Service: "web_interface", Role: "consumer", Description: "Optional gRPC fleet management control client"},
 			},
@@ -212,4 +212,3 @@ func (h *RESTHandler) handleContracts(w http.ResponseWriter, r *http.Request) {
 	contracts := BuildExchangeContracts(h.appConfig, clients)
 	h.sendJSON(w, toolbox_spec.NewContractsEnvelope("config_server", version, "config-server (live controller + embedded contracts)", contracts))
 }
-

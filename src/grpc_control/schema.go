@@ -6,4 +6,3 @@ import _ "embed"
 //
 //go:embed config_server.proto
 var ConfigServerProtoSchema string
-
