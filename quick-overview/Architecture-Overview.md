@@ -51,7 +51,7 @@ tags:
 
 ### 1. SafeSocket Dual-Loop Connection Model
 - **Handshake Authentication**: Every TCP connection on port `3306` must immediately exchange identity metadata (`Name`, `Address`).
-- **Dedicated Mailbox Pattern**: Each client receives an isolated channel (`chan []byte, buffer: 3`). Broadcasts use non-blocking `select`: if a consumer transiently overflows its buffer, the server flags the mailbox and elevates the next delivery to `FULL_REFRESH`, gently recovering parity without dropping the connection.
+- **Dedicated Lifecycle-Safe Mailbox Pattern**: Each client receives an isolated channel (`chan []byte, buffer: 3`) paired with a `done chan struct{}` closed via `sync.Once`. Broadcasts select on `<-mailbox.done` and `mailbox.send <- targetBytes` without ever closing `mailbox.send`, eliminating send-on-closed-channel races during concurrent disconnect churn. If a consumer transiently overflows its buffer, the server flags the mailbox and elevates the next delivery to `FULL_REFRESH`, gently recovering parity without dropping the connection.
 - **`sync.Once` Coordinated Teardown**: Either side of the connection (reader error or writer socket failure) triggers a single-execution teardown that cleanly closes the socket, stops goroutines, and unregisters the client from `s.listeners` without channel panics.
 
 ### 2. Management Interfaces (gRPC, REST, OpenMFE)

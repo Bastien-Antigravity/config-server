@@ -244,3 +244,32 @@ func TestStore_VersionAndOCC(t *testing.T) {
 		t.Fatalf("store state should remain v3, got %s", s.Get()["sec"]["k"])
 	}
 }
+
+// -----------------------------------------------------------------------------
+
+func TestStore_UpdateAtomicWithOCC_OwnsCommittedMap(t *testing.T) {
+	s := NewStore()
+	var callerRef ConfigMap
+
+	err := s.UpdateAtomicWithOCC(0, func(sandbox ConfigMap) (ConfigMap, error) {
+		callerRef = ConfigMap{
+			"sec": {"key": "committed"},
+		}
+		return callerRef, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Mutate caller's retained reference after commit
+	callerRef["sec"]["key"] = "corrupted_by_caller"
+	callerRef["injected"] = map[string]string{"evil": "true"}
+
+	got := s.Get()
+	if got["sec"]["key"] != "committed" {
+		t.Fatalf("expected store to own committed map ('committed'), got %q", got["sec"]["key"])
+	}
+	if _, exists := got["injected"]; exists {
+		t.Fatal("expected external map mutation not to affect store state")
+	}
+}

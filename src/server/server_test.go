@@ -204,19 +204,17 @@ func TestServer_ConcurrentOnUpdateAndBroadcast(t *testing.T) {
 func TestServer_SuperseededListenerClosesMailbox(t *testing.T) {
 	srv := createTestServer(t)
 
-	mb1 := &clientMailbox{name: "worker-1", send: make(chan []byte, 3)}
-	mb2 := &clientMailbox{name: "worker-1", send: make(chan []byte, 3)}
+	mb1 := newClientMailbox("worker-1", "127.0.0.1:9001", 3)
+	mb2 := newClientMailbox("worker-1", "127.0.0.1:9001", 3)
 
 	srv.addListener("worker-1", mb1)
 	srv.addListener("worker-1", mb2)
 
 	select {
-	case _, ok := <-mb1.send:
-		if ok {
-			t.Fatalf("expected mb1.send to be closed")
-		}
+	case <-mb1.done:
+		// expected: mb1.done is closed when superseded
 	case <-time.After(500 * time.Millisecond):
-		t.Fatalf("expected mb1.send to be closed, timed out")
+		t.Fatalf("expected mb1.done to be closed, timed out")
 	}
 
 	select {
@@ -367,5 +365,106 @@ func TestServer_SaveSyncAndVersionIncrement(t *testing.T) {
 	// 5. Verify SaveSync commits cleanly
 	if err := srv.SaveSync(); err != nil {
 		t.Fatalf("SaveSync failed: %v", err)
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_ConcurrentBroadcastAndDisconnectNoPanic(t *testing.T) {
+	srv := createTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	var wg sync.WaitGroup
+
+	// Churn listeners (add, supersede, remove)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			name := "churn-worker"
+			if id%2 == 0 {
+				name = "churn-worker-even"
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					mb := newClientMailbox(name, "127.0.0.1:8080", 3)
+					srv.addListener(name, mb)
+					srv.removeListener(name, mb)
+				}
+			}
+		}(i)
+	}
+
+	// Concurrent broadcasters hammering broadcastUpdate
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					srv.BroadcastConfig()
+					srv.BroadcastFullRefresh()
+					srv.broadcastRegistry()
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_PersistenceRetryAndReloadErrorPropagation(t *testing.T) {
+	srv := createTestServer(t)
+	ctx := context.Background()
+
+	// Point PersistenceManager at a path where the parent is a regular file so Save() fails
+	blockerFile := filepath.Join(t.TempDir(), "blocker")
+	if err := srv.Persistence.Save(store.ConfigMap{"init": {"k": "v"}}); err != nil {
+		t.Fatalf("initial save failed: %v", err)
+	}
+
+	// Create a PersistenceManager whose target file path is an existing directory (causes Save and Load to fail)
+	badDir := t.TempDir()
+	srv.Persistence = store.NewPersistenceManager(badDir, srv.Logger)
+
+	// 1. TriggerSave + flushDirtyOnce: since Save fails, dirty flag must be re-set to true for retry
+	srv.TriggerSave()
+	srv.flushDirtyOnce()
+	if !srv.dirty.Load() {
+		t.Fatal("expected dirty flag to be restored to true when background persistence Save fails")
+	}
+
+	// 2. ReloadConfig must propagate error when Persistence.Load fails (e.g., target is a directory or corrupt JSON)
+	_ = blockerFile
+	if err := srv.ReloadConfig(ctx); err == nil {
+		t.Fatal("expected ReloadConfig to return error when Persistence.Load fails")
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_DeterministicRegistrySorting(t *testing.T) {
+	srv := createTestServer(t)
+
+	mbZ := newClientMailbox("z-service", "10.0.0.3:9000", 16)
+	mbA := newClientMailbox("a-service", "10.0.0.1:9000", 16)
+	mbM := newClientMailbox("m-service", "10.0.0.2:9000", 16)
+
+	srv.addListener("z-service", mbZ)
+	srv.addListener("a-service", mbA)
+	srv.addListener("m-service", mbM)
+
+	names := srv.GetClientNames()
+	if len(names) != 3 || names[0] != "a-service" || names[1] != "m-service" || names[2] != "z-service" {
+		t.Fatalf("expected sorted client names [a-service m-service z-service], got %v", names)
 	}
 }

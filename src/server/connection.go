@@ -57,22 +57,23 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	_ = sock.SetIdleTimeout(10 * time.Minute)
 
 	// Initialize Mailbox (buffered to absorb bursty broadcasts and sync replies)
-	mailbox := &clientMailbox{
-		name:           clientName,
-		serviceAddress: rawAddress,
-		send:           make(chan []byte, 3),
-	}
+	mailbox := newClientMailbox(clientName, rawAddress, 3)
 
 	s.addListener(clientName, mailbox)
 	defer s.removeListener(clientName, mailbox)
 
 	// 2. Start Writer Loop
 	go func() {
-		for msg := range mailbox.send {
-			if _, err := sock.Write(msg); err != nil {
-				s.Logger.Error("Write failed to %s: %v", clientName, err)
-				_ = sock.Close()
-				break
+		for {
+			select {
+			case <-mailbox.done:
+				return
+			case msg := <-mailbox.send:
+				if _, err := sock.Write(msg); err != nil {
+					s.Logger.Error("Write failed to %s: %v", clientName, err)
+					_ = sock.Close()
+					return
+				}
 			}
 		}
 	}()
@@ -106,6 +107,8 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 
 			// Hand off the response to the Writer Loop
 			select {
+			case <-mailbox.done:
+				return
 			case mailbox.send <- bytes:
 				// Response queued
 			default:

@@ -21,17 +21,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/store"
-	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
-
-	factory "github.com/Bastien-Antigravity/safe-socket"
 
 	schemas "github.com/Bastien-Antigravity/distributed-config/src/schemas"
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
+	factory "github.com/Bastien-Antigravity/safe-socket"
+	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -43,7 +43,36 @@ type clientMailbox struct {
 	name           string
 	serviceAddress string
 	send           chan []byte
+	done           chan struct{}
+	closeOnce      sync.Once
 	needsRefresh   atomic.Bool
+}
+
+func newClientMailbox(name, serviceAddress string, bufferSize int) *clientMailbox {
+	return &clientMailbox{
+		name:           name,
+		serviceAddress: serviceAddress,
+		send:           make(chan []byte, bufferSize),
+		done:           make(chan struct{}),
+	}
+}
+
+func (m *clientMailbox) ensureInit() {
+	if m.done == nil {
+		m.done = make(chan struct{})
+	}
+}
+
+// Close signals the mailbox to stop accepting or draining messages without closing send.
+func (m *clientMailbox) Close() {
+	if m == nil {
+		return
+	}
+	m.closeOnce.Do(func() {
+		if m.done != nil {
+			close(m.done)
+		}
+	})
 }
 
 // -----------------------------------------------------------------------------
@@ -193,7 +222,7 @@ func (s *Server) GetActiveClients() int {
 	return len(*ptr)
 }
 
-// GetClientNames returns the names of all currently connected clients lock-free.
+// GetClientNames returns the names of all currently connected clients lock-free in sorted order.
 func (s *Server) GetClientNames() []string {
 	ptr := s.listeners.Load()
 	if ptr == nil {
@@ -204,6 +233,7 @@ func (s *Server) GetClientNames() []string {
 	for name := range current {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 
@@ -216,7 +246,12 @@ func (s *Server) ReloadConfig(ctx context.Context) error {
 	}
 
 	if s.Persistence != nil {
-		if persisted, err := s.Persistence.Load(); err == nil && persisted != nil {
+		persisted, err := s.Persistence.Load()
+		if err != nil {
+			s.Logger.Error("Failed to load persisted store during reload: %v", err)
+			return fmt.Errorf("failed to load persisted store: %w", err)
+		}
+		if persisted != nil {
 			s.Store.Replace(persisted)
 		}
 	}
@@ -231,6 +266,7 @@ func (s *Server) ReloadConfig(ctx context.Context) error {
 // addListener adds a client mailbox to the broadcast list via atomic pointer swap.
 func (s *Server) addListener(name string, mailbox *clientMailbox) {
 	s.listenersLock.Lock()
+	mailbox.ensureInit()
 	oldPtr := s.listeners.Load()
 	next := make(map[string]*clientMailbox)
 	if oldPtr != nil {
@@ -239,7 +275,7 @@ func (s *Server) addListener(name string, mailbox *clientMailbox) {
 		}
 	}
 	if old, exists := next[name]; exists && old != mailbox {
-		close(old.send)
+		old.Close()
 		s.Logger.Info("Replaced existing listener for %s", name)
 	}
 	next[name] = mailbox
@@ -263,7 +299,7 @@ func (s *Server) removeListener(name string, mailbox *clientMailbox) {
 				}
 			}
 			s.listeners.Store(&next)
-			close(mailbox.send)
+			mailbox.Close()
 			s.Logger.Info("Listener removed: %s", name)
 		}
 	}
@@ -284,7 +320,24 @@ func (s *Server) SaveSync() error {
 		return nil
 	}
 	s.dirty.Store(false)
-	return s.Persistence.Save(s.Store.Get())
+	if err := s.Persistence.Save(s.Store.Get()); err != nil {
+		s.dirty.Store(true)
+		return err
+	}
+	return nil
+}
+
+func (s *Server) flushDirtyOnce() {
+	if s.dirty.Swap(false) {
+		if s.Persistence == nil {
+			return
+		}
+		s.Logger.Info("Background persistence: Saving dirty state...")
+		if err := s.Persistence.Save(s.Store.Get()); err != nil {
+			s.dirty.Store(true)
+			s.Logger.Error("Background persistence failed: %v", err)
+		}
+	}
 }
 
 // persistenceWorker periodically saves the configuration to disk if dirty.
@@ -295,12 +348,7 @@ func (s *Server) persistenceWorker() {
 	for {
 		select {
 		case <-ticker.C:
-			if s.dirty.Swap(false) {
-				s.Logger.Info("Background persistence: Saving dirty state...")
-				if err := s.Persistence.Save(s.Store.Get()); err != nil {
-					s.Logger.Error("Background persistence failed: %v", err)
-				}
-			}
+			s.flushDirtyOnce()
 		case <-s.shutdown:
 			// Loop exit only. Final save is handled by the Lifecycle Manager in main.go
 			// to ensure exclusive, non-simultaneous access.
@@ -326,6 +374,9 @@ func (s *Server) broadcastRegistry() {
 			}
 		}
 	}
+
+	sort.Strings(clients)
+	sort.Strings(addresses)
 
 	registry["active_services"] = clients
 	if len(addresses) > 0 {
@@ -376,6 +427,12 @@ func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 	}
 
 	for name, mailbox := range *ptr {
+		select {
+		case <-mailbox.done:
+			continue
+		default:
+		}
+
 		targetBytes := bytes
 
 		// If this client had a prior overflow, elevate to FULL_REFRESH to restore parity
@@ -386,6 +443,8 @@ func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 		}
 
 		select {
+		case <-mailbox.done:
+			continue
 		case mailbox.send <- targetBytes:
 			// Message queued successfully; clear overflow recovery flag if sent
 			if mailbox.needsRefresh.Load() {

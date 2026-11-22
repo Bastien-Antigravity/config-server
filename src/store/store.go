@@ -135,8 +135,9 @@ func (s *Store) UpdateAtomicWithOCC(expectedVersion uint64, modificationFn func(
 		return err // Atomicity: s.config is unchanged
 	}
 
-	// 3. Atomically swap the master pointer
-	s.config.Store(&result)
+	// 3. Atomically swap the master pointer (deep-copy so store owns the committed state)
+	committed := DeepCopy(result)
+	s.config.Store(&committed)
 	s.version.Add(1)
 	return nil
 }

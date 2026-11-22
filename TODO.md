@@ -38,9 +38,9 @@ tags:
 
 ### Critical Findings
 
-- [ ] **[CONFIRMED] Mailbox send/close race**: `broadcastUpdate` can load a mailbox from the atomic listener snapshot, while `addListener` or `removeListener` simultaneously closes `mailbox.send`. The subsequent send can panic the process with `send on closed channel`. This affects both `broadcastUpdate` and TCP response delivery. Highest priority because no mailbox lifetime synchronization protects the lock-free listener map.
-  - Evidence: `src/server/server.go` closes mailboxes in `addListener` and `removeListener`; `broadcastUpdate` and `handleConnection` send to the same channels.
-  - Required coverage: concurrent broadcast plus listener replacement/removal, duplicate-name reconnection, reader disconnect during broadcast, and repeated stress/fuzz runs.
+- [x] **[RESOLVED] Mailbox send/close race**: Added `done chan struct{}` and `closeOnce sync.Once` (`Close()`) to `clientMailbox` so `mailbox.send` is never closed while `broadcastUpdate` or response delivery selects on `case <-mailbox.done:`.
+  - Evidence: `src/server/server.go` and `src/server/connection.go`.
+  - Verified by `TestServer_ConcurrentBroadcastAndDisconnectNoPanic` and `TestServer_SuperseededListenerClosesMailbox` under `go test -race ./...`.
 
 ### High Findings
 
@@ -52,9 +52,9 @@ tags:
   - Evidence: `src/store/persistence.go`, `src/store/store.go`, `src/server/server.go`, and `src/core/request_handler.go`.
   - Required coverage: restart with persisted state, stale OCC after restart, successful OCC after restart, and revision overflow/32-bit boundary testing.
 
-- [ ] **[STATIC REVIEW] Reload error handling ignores persistence failures**: `ReloadConfig` reloads AppConfig and ignores `Persistence.Load()` errors. It can therefore report success and broadcast stale/full state even after the persisted file cannot be read or is invalid.
-  - Evidence: `src/server/server.go: ReloadConfig`.
-  - Required coverage: corrupt JSON, unreadable file, missing file, load failure followed by reload response, and full-refresh consistency assertions.
+- [x] **[RESOLVED] Reload error handling ignores persistence failures**: `ReloadConfig` now logs and returns `fmt.Errorf("failed to load persisted store: %w", err)` when `s.Persistence.Load()` fails, and `persistenceWorker` / `SaveSync` re-mark `s.dirty.Store(true)` when `s.Persistence.Save()` fails so failed saves are retried on the next tick.
+  - Evidence: `src/server/server.go: ReloadConfig`, `flushDirtyOnce`, and `SaveSync`.
+  - Verified by `TestServer_PersistenceRetryAndReloadErrorPropagation`.
 
 - [ ] **[STATIC REVIEW] Management API lacks authentication/authorization**: REST mutation endpoints and wildcard CORS are reachable without an authentication or authorization guard. This includes set, reload, persist, list, status, and contracts endpoints.
   - Evidence: `src/rest/rest_handler.go: Handler`.
