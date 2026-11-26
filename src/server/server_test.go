@@ -468,3 +468,43 @@ func TestServer_DeterministicRegistrySorting(t *testing.T) {
 		t.Fatalf("expected sorted client names [a-service m-service z-service], got %v", names)
 	}
 }
+
+// -----------------------------------------------------------------------------
+
+func TestServer_ListConfigSkipsNonScalarCapabilityStructures(t *testing.T) {
+	srv := createTestServer(t)
+	srv.AppConfig.Capabilities["nats"] = map[string]interface{}{
+		"ip":              "127.0.0.1",
+		"port":            "4222",
+		"max_connections": 100,
+		"servers":         []interface{}{"nats://127.0.0.1:4222"},
+		"jetstream": map[string]interface{}{
+			"enabled": true,
+		},
+	}
+	srv.AppConfig.Capabilities["rag_engine"] = map[string]interface{}{
+		"ip":   "127.0.0.1",
+		"port": "8090",
+		"dashboard": map[string]interface{}{
+			"ip":   "127.0.0.1",
+			"port": "8082",
+		},
+	}
+
+	listed, err := srv.ListConfig(context.Background())
+	if err != nil {
+		t.Fatalf("ListConfig failed: %v", err)
+	}
+	if listed["nats"]["ip"] != "127.0.0.1" || listed["nats"]["max_connections"] != "100" {
+		t.Fatalf("expected scalar nats fields in ListConfig, got %v", listed["nats"])
+	}
+	if _, hasServers := listed["nats"]["servers"]; hasServers {
+		t.Fatalf("expected non-scalar slice 'servers' to be excluded from flat ConfigMap, got %q", listed["nats"]["servers"])
+	}
+	if _, hasJetStream := listed["nats"]["jetstream"]; hasJetStream {
+		t.Fatalf("expected non-scalar map 'jetstream' to be excluded from flat ConfigMap, got %q", listed["nats"]["jetstream"])
+	}
+	if _, hasDashboard := listed["rag_engine"]["dashboard"]; hasDashboard {
+		t.Fatalf("expected non-scalar map 'dashboard' to be excluded from flat ConfigMap, got %q", listed["rag_engine"]["dashboard"])
+	}
+}

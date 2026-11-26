@@ -150,10 +150,11 @@ func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
 			}
 			sec := merged[capName]
 			for k, v := range capMap {
-				if s, ok := v.(string); ok {
-					setIfEmpty(sec, k, s)
-				} else {
-					setIfEmpty(sec, k, fmt.Sprintf("%v", v))
+				switch typed := v.(type) {
+				case string:
+					setIfEmpty(sec, k, typed)
+				case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+					setIfEmpty(sec, k, fmt.Sprintf("%v", typed))
 				}
 			}
 			if len(sec) == 0 {

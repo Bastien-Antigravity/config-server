@@ -77,8 +77,11 @@ func main() {
 	configStore := store.NewStore()
 	configStore.Replace(initialConfig)
 
-	// 4. Initialize Protocol Server
+	// 4. Initialize Protocol Server & seed authoritative baseline capabilities into Store
 	srv := server.NewServer(appConfig, appLogger, configStore, pm)
+	if mergedBaseline, listErr := srv.ListConfig(context.Background()); listErr == nil && len(mergedBaseline) > 0 {
+		configStore.Replace(mergedBaseline)
+	}
 
 	// 5. Initialize Management Interfaces (gRPC & REST)
 	grpcSrv, err := grpc_control.NewGRPCService(srv, appLogger)

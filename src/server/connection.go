@@ -17,8 +17,10 @@ package server
 // =============================================================================
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
@@ -69,8 +71,20 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 			case <-mailbox.done:
 				return
 			case msg := <-mailbox.send:
+				select {
+				case <-mailbox.done:
+					return
+				default:
+				}
 				if _, err := sock.Write(msg); err != nil {
-					s.Logger.Error("Write failed to %s: %v", clientName, err)
+					select {
+					case <-mailbox.done:
+						return
+					default:
+					}
+					if !errors.Is(err, net.ErrClosed) {
+						s.Logger.Error("Write failed to %s: %v", clientName, err)
+					}
 					_ = sock.Close()
 					return
 				}
@@ -83,7 +97,7 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	for {
 		data, err := sock.ReadMessage()
 		if err != nil {
-			if err != io.EOF {
+			if err != io.EOF && !errors.Is(err, net.ErrClosed) {
 				s.Logger.Error("Read error from %s: %v", clientName, err)
 			}
 			return
