@@ -19,8 +19,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
+	"sync/atomic"
 
 	"github.com/Bastien-Antigravity/config-server/src/server"
+
 	unilog_interfaces "github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 
 	"google.golang.org/grpc"
@@ -33,11 +36,12 @@ import (
 // -----------------------------------------------------------------------------
 
 type GRPCService struct {
+	mu       sync.Mutex
 	server   *grpc.Server
 	listener net.Listener
 	logger   unilog_interfaces.Logger
 	srv      *server.Server
-	running  bool
+	running  atomic.Bool
 
 	ControlService *ControlServiceImpl
 }
@@ -70,7 +74,6 @@ func NewGRPCService(srv *server.Server, logger unilog_interfaces.Logger) (*GRPCS
 		listener: listener,
 		logger:   logger,
 		srv:      srv,
-		running:  false,
 	}, nil
 }
 
@@ -78,6 +81,7 @@ func NewGRPCService(srv *server.Server, logger unilog_interfaces.Logger) (*GRPCS
 
 // Start starts the gRPC server (Non-blocking)
 func (g *GRPCService) Start() error {
+	g.mu.Lock()
 	g.logger.Info("Starting gRPC management service on %s", g.listener.Addr().String())
 
 	// Register services
@@ -89,16 +93,20 @@ func (g *GRPCService) Start() error {
 	grpc_health_v1.RegisterHealthServer(g.server, healthServer)
 	healthServer.SetServingStatus("grpc_control.ConfigControlService", grpc_health_v1.HealthCheckResponse_SERVING)
 
+	srv := g.server
+	ln := g.listener
+	g.running.Store(true)
+	g.mu.Unlock()
+
 	// Start server in goroutine
 	go func() {
-		g.running = true
-		if err := g.server.Serve(g.listener); err != nil && err != grpc.ErrServerStopped {
+		defer g.running.Store(false)
+		if err := srv.Serve(ln); err != nil && err != grpc.ErrServerStopped {
 			g.logger.Error("gRPC management server failed: %v", err)
 		}
-		g.running = false
 	}()
 
-	g.logger.Info("gRPC management service initialized successfully on %s", g.listener.Addr().String())
+	g.logger.Info("gRPC management service initialized successfully on %s", ln.Addr().String())
 	return nil
 }
 
@@ -107,29 +115,33 @@ func (g *GRPCService) Start() error {
 // Stop gracefully stops the gRPC server
 func (g *GRPCService) Stop(ctx context.Context) error {
 	g.logger.Info("Stopping gRPC management service...")
+	g.mu.Lock()
+	srv := g.server
+	ln := g.listener
+	g.mu.Unlock()
 
-	if g.server != nil {
+	if srv != nil {
 		// Graceful stop
 		done := make(chan struct{})
 		go func() {
-			g.server.GracefulStop()
+			srv.GracefulStop()
 			close(done)
 		}()
 
 		select {
 		case <-ctx.Done():
 			g.logger.Warning("gRPC graceful shutdown timeout, forcing stop...")
-			g.server.Stop()
+			srv.Stop()
 		case <-done:
 			g.logger.Info("gRPC management service stopped gracefully")
 		}
 	}
 
-	if g.listener != nil {
-		g.listener.Close()
+	if ln != nil {
+		_ = ln.Close()
 	}
 
-	g.running = false
+	g.running.Store(false)
 	return nil
 }
 
@@ -137,5 +149,5 @@ func (g *GRPCService) Stop(ctx context.Context) error {
 
 // IsRunning returns whether the gRPC server is running
 func (g *GRPCService) IsRunning() bool {
-	return g.running
+	return g.running.Load()
 }

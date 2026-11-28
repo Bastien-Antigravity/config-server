@@ -28,17 +28,13 @@ type mockLogger struct {
 	interfaces.Logger
 }
 
-func (m *mockLogger) Info(format string, args ...interface{})     {}
-func (m *mockLogger) Error(format string, args ...interface{})    {}
-func (m *mockLogger) Warning(format string, args ...interface{})  {}
-func (m *mockLogger) Critical(format string, args ...interface{}) {}
+func (m *mockLogger) Info(format string, args ...any)     {}
+func (m *mockLogger) Error(format string, args ...any)    {}
+func (m *mockLogger) Warning(format string, args ...any)  {}
+func (m *mockLogger) Critical(format string, args ...any) {}
 
 func TestPersistenceSaveLoad(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "config-server-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	filePath := filepath.Join(tmpDir, "config.json")
 	pm := NewPersistenceManager(filePath, &mockLogger{})
@@ -73,8 +69,50 @@ func TestPersistenceSaveLoad(t *testing.T) {
 	}
 }
 
+func TestPersistenceVersionEnvelopeAndLegacyCompat(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "versioned.json")
+	pm := NewPersistenceManager(filePath, &mockLogger{})
+
+	originalConfig := ConfigMap{
+		"alpha": {"host": "127.0.0.1", "port": "8080"},
+	}
+
+	if err := pm.SaveWithVersion(originalConfig, 42); err != nil {
+		t.Fatalf("SaveWithVersion failed: %v", err)
+	}
+
+	loadedConfig, loadedVer, err := pm.LoadWithVersion()
+	if err != nil {
+		t.Fatalf("LoadWithVersion failed: %v", err)
+	}
+	if loadedVer != 42 {
+		t.Fatalf("Expected version 42, got %d", loadedVer)
+	}
+	if loadedConfig["alpha"]["host"] != "127.0.0.1" {
+		t.Fatalf("Expected host 127.0.0.1, got %q", loadedConfig["alpha"]["host"])
+	}
+
+	// Legacy flat JSON file without __store_version__ envelope must still load with version 0.
+	legacyPath := filepath.Join(tmpDir, "legacy.json")
+	if err := os.WriteFile(legacyPath, []byte(`{"legacy":{"k":"v"}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	pmLegacy := NewPersistenceManager(legacyPath, &mockLogger{})
+	legacyCfg, legacyVer, err := pmLegacy.LoadWithVersion()
+	if err != nil {
+		t.Fatalf("LoadWithVersion(legacy) failed: %v", err)
+	}
+	if legacyVer != 0 {
+		t.Fatalf("Expected legacy version 0, got %d", legacyVer)
+	}
+	if legacyCfg["legacy"]["k"] != "v" {
+		t.Fatalf("Expected legacy value v, got %q", legacyCfg["legacy"]["k"])
+	}
+}
+
 func TestPersistenceLoadNonExistent(t *testing.T) {
-	pm := NewPersistenceManager("non-existent.json", &mockLogger{})
+	pm := NewPersistenceManager(filepath.Join(t.TempDir(), "non-existent.json"), &mockLogger{})
 	config, err := pm.Load()
 	if err != nil {
 		t.Errorf("Load should not fail if file doesn't exist: %v", err)

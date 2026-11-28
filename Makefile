@@ -20,7 +20,7 @@ verify-standalone:
 build:
 	@echo "Building config-server (version $(VERSION))..."
 	@mkdir -p bin
-	go build -ldflags="-s -w -X 'github.com/Bastien-Antigravity/config-server/src/server.ServerVersion=$(VERSION)'" -o bin/config-server ./cmd/config-server
+	go build -ldflags="-s -w -X 'github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/version.BuildVersion=$(VERSION)'" -o bin/config-server ./cmd/config-server
 
 test:
 	@echo "Running tests (version $(VERSION))..."

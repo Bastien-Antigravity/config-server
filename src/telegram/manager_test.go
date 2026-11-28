@@ -110,9 +110,14 @@ func TestMenuManager_RebuildMenu(t *testing.T) {
 
 	ctrl := &mockController{
 		config: store.ConfigMap{
+			"zeta_service": {
+				"port": "9000",
+			},
 			"timescale_db": {
-				"port": "5432",
-				"host": "127.0.0.1",
+				"port":        "5432",
+				"host":        "127.0.0.1",
+				"db_password": "cleartext-password",
+				"cipher":      "ENC(secret-blob)",
 			},
 		},
 	}
@@ -120,9 +125,29 @@ func TestMenuManager_RebuildMenu(t *testing.T) {
 	mgr := NewMenuManager(tc, ctrl, logger)
 	mgr.RebuildMenu()
 
+	// Verify deterministic section/key ordering and secret redaction in menu labels
+	actions, err := mgr.BuildActions()
+	if err != nil {
+		t.Fatalf("BuildActions failed: %v", err)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("expected 2 top-level menu actions, got %d", len(actions))
+	}
+	browse := actions[1].SubMenu
+	if len(browse) != 2 || browse[0].Label != "📁 timescale_db" || browse[1].Label != "📁 zeta_service" {
+		t.Fatalf("expected deterministically sorted sections [timescale_db, zeta_service], got %+v", browse)
+	}
+	dbKeys := browse[0].SubMenu
+	if len(dbKeys) != 4 || dbKeys[0].Label != "🔑 cipher" || dbKeys[1].Label != "🔑 db_password" || dbKeys[2].Label != "🔑 host" || dbKeys[3].Label != "🔑 port" {
+		t.Fatalf("expected deterministically sorted keys [cipher, db_password, host, port], got %+v", dbKeys)
+	}
+	if dbKeys[0].SubMenu[0].Label != "Value: [REDACTED]" || dbKeys[1].SubMenu[0].Label != "Value: [REDACTED]" {
+		t.Fatalf("expected sensitive values to be redacted in Telegram menu, got %q and %q", dbKeys[0].SubMenu[0].Label, dbKeys[1].SubMenu[0].Label)
+	}
+
 	// Verify action callbacks work
 	// Trigger reload
-	err := ctrl.ReloadConfig(context.Background())
+	err = ctrl.ReloadConfig(context.Background())
 	if err != nil || !ctrl.reloaded {
 		t.Fatalf("expected reloaded to be true")
 	}

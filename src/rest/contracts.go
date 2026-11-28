@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/Bastien-Antigravity/config-server/src/grpc_control"
+
 	config_schemas "github.com/Bastien-Antigravity/distributed-config/src/schemas"
 	toolbox_config "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 	toolbox_spec "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/spec"
@@ -100,7 +101,8 @@ func BuildExchangeContracts(appConfig *toolbox_config.AppConfig, clientNames []s
 				"GET  /api/v1/contracts",
 				"GET  /api/v1/config/list",
 				"GET  /api/v1/config/get?section={section}&key={key}",
-				"POST /api/v1/config/set        body: {\"section\": string, \"key\": string, \"value\": string}",
+				"POST /api/v1/config/set        body: {\"section\": string, \"key\": string, \"value\": string, \"expected_version\": uint64?}",
+				"POST /api/v1/config/delete     body: {\"section\": string, \"key\": string}",
 				"POST /api/v1/config/reload",
 				"POST /api/v1/config/persist",
 				"GET  /static/mfe.js            (alias: /static/js/mfe-loader.js)",
@@ -109,12 +111,13 @@ func BuildExchangeContracts(appConfig *toolbox_config.AppConfig, clientNames []s
 				{Service: "web_interface", Role: "consumer", Description: "Loads <config-server-mfe> Web Component and queries config REST APIs"},
 			},
 			Operations: []toolbox_spec.ContractOperation{
-				{Name: "Status", Kind: "GET", Target: "/api/v1/status", Output: "{ healthy, status, version, timestamp, active_clients, client_names }", Description: "Live server status & SafeSocket client list"},
-				{Name: "ListConfig", Kind: "GET", Target: "/api/v1/config/list", Output: "{ success, json_config, timestamp }", Description: "Returns full Copy-On-Write configuration tree as JSON"},
-				{Name: "GetConfig", Kind: "GET", Target: "/api/v1/config/get?section=&key=", Input: "query: section, key", Output: "{ success, value, timestamp }", Description: "Read a single configuration key"},
-				{Name: "SetConfig", Kind: "POST", Target: "/api/v1/config/set", Input: "{ section, key, value }", Output: "{ success, message, timestamp }", Description: "Atomically update key & broadcast via TCP mailboxes"},
-				{Name: "ReloadConfig", Kind: "POST", Target: "/api/v1/config/reload", Output: "{ success, message, timestamp }", Description: "Reload configuration state from persistence file"},
-				{Name: "PersistConfig", Kind: "POST", Target: "/api/v1/config/persist", Output: "{ success, message, timestamp }", Description: "Flush in-memory store atomically to disk"},
+				{Name: "Status", Kind: "GET", Target: "/api/v1/status", Output: "{ healthy, status, version, store_version, timestamp, active_clients, client_names }", Description: "Live server status & SafeSocket client list"},
+				{Name: "ListConfig", Kind: "GET", Target: "/api/v1/config/list", Output: "{ success, json_config, version, timestamp }", Description: "Returns full Copy-On-Write configuration tree as JSON"},
+				{Name: "GetConfig", Kind: "GET", Target: "/api/v1/config/get?section=&key=", Input: "query: section, key", Output: "{ success, value, version, timestamp }", Description: "Read a single configuration key"},
+				{Name: "SetConfig", Kind: "POST", Target: "/api/v1/config/set", Input: "{ section, key, value, expected_version? }", Output: "{ success, message, version, timestamp }", Description: "Atomically update key & broadcast via TCP mailboxes"},
+				{Name: "DeleteConfig", Kind: "POST", Target: "/api/v1/config/delete", Input: "{ section, key }", Output: "{ success, message, version, timestamp }", Description: "Atomically delete key & broadcast FULL_REFRESH via TCP mailboxes"},
+				{Name: "ReloadConfig", Kind: "POST", Target: "/api/v1/config/reload", Output: "{ success, message, version, timestamp }", Description: "Reload configuration baseline + persistence state from disk"},
+				{Name: "PersistConfig", Kind: "POST", Target: "/api/v1/config/persist", Output: "{ success, message, timestamp }", Description: "Synchronously flush in-memory store atomically to disk"},
 				{Name: "Contracts", Kind: "GET", Target: "/api/v1/contracts", Output: "ContractsEnvelope JSON", Description: "Self-describing microservice exchange contracts"},
 				{Name: "MFEScript", Kind: "GET", Target: "/static/mfe.js", Output: "application/javascript", Description: "Embedded OpenMFE <config-server-mfe> custom element"},
 			},
@@ -206,7 +209,12 @@ func (h *RESTHandler) handleContracts(w http.ResponseWriter, r *http.Request) {
 		version = statusInfo.Version
 	}
 	if version == "" {
-		version = toolbox_version.Get()
+		if h.appConfig != nil && h.appConfig.Config != nil {
+			version = h.appConfig.GetVersion()
+		}
+		if version == "" {
+			version = toolbox_version.Get()
+		}
 	}
 
 	contracts := BuildExchangeContracts(h.appConfig, clients)

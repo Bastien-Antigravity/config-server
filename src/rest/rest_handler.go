@@ -29,7 +29,9 @@ import (
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
 	"github.com/Bastien-Antigravity/config-server/src/store"
+
 	toolbox_config "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
+	toolbox_wiretap "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/wiretap"
 	unilog_interfaces "github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
 
@@ -69,6 +71,7 @@ func (h *RESTHandler) SetAppConfig(cfg *toolbox_config.AppConfig) {
 func (h *RESTHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/get", h.handleGetConfig)
 	mux.HandleFunc("/api/v1/config/set", h.handleSetConfig)
+	mux.HandleFunc("/api/v1/config/delete", h.handleDeleteConfig)
 	mux.HandleFunc("/api/v1/config/list", h.handleListConfig)
 	mux.HandleFunc("/api/v1/config/reload", h.handleReloadConfig)
 	mux.HandleFunc("/api/v1/config/persist", h.handlePersistConfig)
@@ -146,10 +149,23 @@ func (h *RESTHandler) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	start := time.Now()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var req httpSetConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Section) == "" || strings.TrimSpace(req.Key) == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		h.sendJSON(w, httpControlResponse{
+			Success:   false,
+			Message:   "section and key are required",
+			Version:   h.control.GetStoreVersion(r.Context()),
+			Timestamp: time.Now().Unix(),
+			ErrorCode: "INVALID_ARGUMENT",
+		})
 		return
 	}
 
@@ -164,21 +180,74 @@ func (h *RESTHandler) handleSetConfig(w http.ResponseWriter, r *http.Request) {
 				Timestamp: time.Now().Unix(),
 				ErrorCode: "VERSION_MISMATCH",
 			})
-			return
+		} else {
+			h.sendJSON(w, httpControlResponse{
+				Success:   false,
+				Message:   fmt.Sprintf("Failed to update config: %v", err),
+				Version:   h.control.GetStoreVersion(r.Context()),
+				Timestamp: time.Now().Unix(),
+				ErrorCode: "UPDATE_FAILED",
+			})
 		}
+		toolbox_wiretap.RecordEvent(r.RemoteAddr, "config_server", "REST", "HTTP/1.1 JSON", "/api/v1/config/set", "control", "inbound", req.Section+"."+req.Key, 0, float64(time.Since(start).Microseconds())/1000.0, true, false)
+		return
+	}
+
+	toolbox_wiretap.RecordEvent(r.RemoteAddr, "config_server", "REST", "HTTP/1.1 JSON", "/api/v1/config/set", "control", "inbound", req.Section+"."+req.Key, 0, float64(time.Since(start).Microseconds())/1000.0, false, false)
+	h.sendJSON(w, httpControlResponse{
+		Success:   true,
+		Message:   "Configuration updated and broadcasted successfully",
+		Version:   h.control.GetStoreVersion(r.Context()),
+		Timestamp: time.Now().Unix(),
+	})
+}
+
+type httpDeleteConfigRequest struct {
+	Section string `json:"section"`
+	Key     string `json:"key"`
+}
+
+func (h *RESTHandler) handleDeleteConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	start := time.Now()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var req httpDeleteConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Section) == "" || strings.TrimSpace(req.Key) == "" {
+		w.WriteHeader(http.StatusBadRequest)
 		h.sendJSON(w, httpControlResponse{
 			Success:   false,
-			Message:   fmt.Sprintf("Failed to update config: %v", err),
+			Message:   "section and key are required",
 			Version:   h.control.GetStoreVersion(r.Context()),
 			Timestamp: time.Now().Unix(),
-			ErrorCode: "UPDATE_FAILED",
+			ErrorCode: "INVALID_ARGUMENT",
 		})
 		return
 	}
 
+	if err := h.control.DeleteConfig(r.Context(), req.Section, req.Key); err != nil {
+		toolbox_wiretap.RecordEvent(r.RemoteAddr, "config_server", "REST", "HTTP/1.1 JSON", "/api/v1/config/delete", "control", "inbound", req.Section+"."+req.Key, 0, float64(time.Since(start).Microseconds())/1000.0, true, false)
+		h.sendJSON(w, httpControlResponse{
+			Success:   false,
+			Message:   fmt.Sprintf("Failed to delete config: %v", err),
+			Version:   h.control.GetStoreVersion(r.Context()),
+			Timestamp: time.Now().Unix(),
+			ErrorCode: "DELETE_FAILED",
+		})
+		return
+	}
+
+	toolbox_wiretap.RecordEvent(r.RemoteAddr, "config_server", "REST", "HTTP/1.1 JSON", "/api/v1/config/delete", "control", "inbound", req.Section+"."+req.Key, 0, float64(time.Since(start).Microseconds())/1000.0, false, false)
 	h.sendJSON(w, httpControlResponse{
 		Success:   true,
-		Message:   "Configuration updated and broadcasted successfully",
+		Message:   "Configuration key deleted and FULL_REFRESH broadcasted",
 		Version:   h.control.GetStoreVersion(r.Context()),
 		Timestamp: time.Now().Unix(),
 	})
@@ -230,9 +299,11 @@ func (h *RESTHandler) handleReloadConfig(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	start := time.Now()
 
 	err := h.control.ReloadConfig(r.Context())
 	if err != nil {
+		toolbox_wiretap.RecordEvent(r.RemoteAddr, "config_server", "REST", "HTTP/1.1 JSON", "/api/v1/config/reload", "control", "inbound", "reload", 0, float64(time.Since(start).Microseconds())/1000.0, true, false)
 		h.sendJSON(w, httpControlResponse{
 			Success:   false,
 			Message:   fmt.Sprintf("Failed to reload config: %v", err),
@@ -242,9 +313,11 @@ func (h *RESTHandler) handleReloadConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	toolbox_wiretap.RecordEvent(r.RemoteAddr, "config_server", "REST", "HTTP/1.1 JSON", "/api/v1/config/reload", "control", "inbound", "reload", 0, float64(time.Since(start).Microseconds())/1000.0, false, false)
 	h.sendJSON(w, httpControlResponse{
 		Success:   true,
 		Message:   "Configuration reloaded from disk",
+		Version:   h.control.GetStoreVersion(r.Context()),
 		Timestamp: time.Now().Unix(),
 	})
 }
@@ -254,9 +327,11 @@ func (h *RESTHandler) handlePersistConfig(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	start := time.Now()
 
 	err := h.control.PersistConfig(r.Context())
 	if err != nil {
+		toolbox_wiretap.RecordEvent(r.RemoteAddr, "config_server", "REST", "HTTP/1.1 JSON", "/api/v1/config/persist", "control", "inbound", "persist", 0, float64(time.Since(start).Microseconds())/1000.0, true, false)
 		h.sendJSON(w, httpControlResponse{
 			Success:   false,
 			Message:   fmt.Sprintf("Failed to persist config: %v", err),
@@ -266,9 +341,10 @@ func (h *RESTHandler) handlePersistConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	toolbox_wiretap.RecordEvent(r.RemoteAddr, "config_server", "REST", "HTTP/1.1 JSON", "/api/v1/config/persist", "control", "inbound", "persist", 0, float64(time.Since(start).Microseconds())/1000.0, false, false)
 	h.sendJSON(w, httpControlResponse{
 		Success:   true,
-		Message:   "Persistence trigger activated",
+		Message:   "Configuration persisted synchronously to disk",
 		Timestamp: time.Now().Unix(),
 	})
 }
@@ -345,10 +421,12 @@ func (h *RESTHandler) StartServer(addr string) error {
 
 	h.mu.Lock()
 	h.server = &http.Server{
-		Addr:         addr,
-		Handler:      h.Handler(),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr:              addr,
+		Handler:           h.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	server := h.server
 	h.mu.Unlock()

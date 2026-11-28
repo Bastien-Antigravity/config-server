@@ -32,9 +32,22 @@ import (
 // -----------------------------------------------------------------------------
 
 // ProcessRequest handles the business logic for incoming configuration requests.
-// It returns a response message to be sent back to the client.
-// It may also trigger a broadcast and persistence via the provided callbacks.
+// It delegates to ProcessRequestWithVersion for atomic version-stamped execution.
 func ProcessRequest(data []byte, s *store.Store, broadcast func(config.ConfigMsg_Cmd, []byte), triggerSave func()) (*config.ConfigMsg, error) {
+	var wrapped func(config.ConfigMsg_Cmd, []byte, uint64)
+	if broadcast != nil {
+		wrapped = func(cmd config.ConfigMsg_Cmd, payload []byte, _ uint64) {
+			broadcast(cmd, payload)
+		}
+	}
+	return ProcessRequestWithVersion(data, s, wrapped, triggerSave)
+}
+
+// -----------------------------------------------------------------------------
+
+// ProcessRequestWithVersion handles incoming configuration requests atomically,
+// stamping response and broadcast frames with the exact committed store version.
+func ProcessRequestWithVersion(data []byte, s *store.Store, broadcast func(config.ConfigMsg_Cmd, []byte, uint64), triggerSave func()) (*config.ConfigMsg, error) {
 	req := &config.ConfigMsg{}
 	if err := proto.Unmarshal(data, req); err != nil {
 		return nil, fmt.Errorf("protobuf unmarshal error: %w", err)
@@ -45,8 +58,9 @@ func ProcessRequest(data []byte, s *store.Store, broadcast func(config.ConfigMsg
 	switch req.Command {
 	case config.ConfigMsg_GET_SYNC, config.ConfigMsg_FULL_REFRESH:
 		resp.Command = req.Command
-		resp.Version = int32(s.GetVersion())
-		payload, _ := json.Marshal(s.Get())
+		snapshot, ver := s.GetWithVersion()
+		resp.Version = int32(ver)
+		payload, _ := json.Marshal(snapshot)
 		resp.Payload = payload
 
 	case config.ConfigMsg_PUT_SYNC:
@@ -70,31 +84,28 @@ func ProcessRequest(data []byte, s *store.Store, broadcast func(config.ConfigMsg
 			}
 		}
 
-		var err error
+		var expectedVer uint64
 		if req.Version > 0 {
-			err = s.UpdateAtomicWithOCC(uint64(req.Version), func(current store.ConfigMap) (store.ConfigMap, error) {
-				return helpers.ApplyUpdates(current, updates), nil
-			})
-		} else {
-			err = s.UpdateAtomic(func(current store.ConfigMap) (store.ConfigMap, error) {
-				return helpers.ApplyUpdates(current, updates), nil
-			})
+			expectedVer = uint64(req.Version)
 		}
+		committedSnap, committedVer, err := s.UpdateAtomicWithVersion(expectedVer, func(current store.ConfigMap) (store.ConfigMap, error) {
+			return helpers.ApplyUpdates(current, updates), nil
+		})
 
 		if err == nil {
 			resp.Command = config.ConfigMsg_ACK
-			resp.Version = int32(s.GetVersion())
+			resp.Version = int32(committedVer)
 
 			if triggerSave != nil {
 				triggerSave()
 			}
 			if broadcast != nil {
 				if hasDeletion {
-					fullPayload, _ := json.Marshal(s.Get())
-					go broadcast(config.ConfigMsg_FULL_REFRESH, fullPayload)
+					fullPayload, _ := json.Marshal(committedSnap)
+					broadcast(config.ConfigMsg_FULL_REFRESH, fullPayload, committedVer)
 				} else {
 					payload, _ := json.Marshal(updates)
-					go broadcast(config.ConfigMsg_BROADCAST_SYNC, payload)
+					broadcast(config.ConfigMsg_BROADCAST_SYNC, payload, committedVer)
 				}
 			}
 		} else if errors.Is(err, store.ErrVersionMismatch) {
@@ -125,50 +136,36 @@ func ProcessRequest(data []byte, s *store.Store, broadcast func(config.ConfigMsg
 			}
 		}
 
-		var err error
+		var expectedVer uint64
 		if req.Version > 0 {
-			err = s.UpdateAtomicWithOCC(uint64(req.Version), func(sandbox store.ConfigMap) (store.ConfigMap, error) {
-				for section, keys := range deletions {
-					if secMap, ok := sandbox[section]; ok {
-						if len(keys) == 0 {
-							delete(sandbox, section)
-						} else {
-							for _, k := range keys {
-								delete(secMap, k)
-							}
-						}
-					}
-				}
-				return sandbox, nil
-			})
-		} else {
-			err = s.UpdateAtomic(func(sandbox store.ConfigMap) (store.ConfigMap, error) {
-				for section, keys := range deletions {
-					if secMap, ok := sandbox[section]; ok {
-						if len(keys) == 0 {
-							delete(sandbox, section)
-						} else {
-							for _, k := range keys {
-								delete(secMap, k)
-							}
-						}
-					}
-				}
-				return sandbox, nil
-			})
+			expectedVer = uint64(req.Version)
 		}
+		committedSnap, committedVer, err := s.UpdateAtomicWithVersion(expectedVer, func(sandbox store.ConfigMap) (store.ConfigMap, error) {
+			for section, keys := range deletions {
+				if secMap, ok := sandbox[section]; ok {
+					if len(keys) == 0 {
+						delete(sandbox, section)
+					} else {
+						for _, k := range keys {
+							delete(secMap, k)
+						}
+					}
+				}
+			}
+			return sandbox, nil
+		})
 
 		if err == nil {
 			resp.Command = config.ConfigMsg_ACK
-			resp.Version = int32(s.GetVersion())
+			resp.Version = int32(committedVer)
 
 			if triggerSave != nil {
 				triggerSave()
 			}
-			// Broadcast FULL_REFRESH so all clients immediately purge deleted keys
-			fullPayload, _ := json.Marshal(s.Get())
+			// Broadcast FULL_REFRESH with exact committed snapshot so all clients purge deleted keys in order
 			if broadcast != nil {
-				go broadcast(config.ConfigMsg_FULL_REFRESH, fullPayload)
+				fullPayload, _ := json.Marshal(committedSnap)
+				broadcast(config.ConfigMsg_FULL_REFRESH, fullPayload, committedVer)
 			}
 		} else if errors.Is(err, store.ErrVersionMismatch) {
 			resp.Command = config.ConfigMsg_ERROR

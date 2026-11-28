@@ -36,6 +36,9 @@ go vet ./...
 # Run test coverage reporting across all packages
 go test -cover ./...
 
+# Run zero-allocation hot-path benchmarks
+go test -bench=. -benchmem ./src/store
+
 # Compile production binary
 make build
 ```
@@ -44,14 +47,14 @@ make build
 
 | Package | Test File | Primary Coverage Scope |
 |---|---|---|
-| **`src/core`** | `request_handler_test.go` | Protobuf unmarshaling, `GET_SYNC`, `FULL_REFRESH`, atomic `PUT_SYNC`, unknown command rejection. |
-| **`src/grpc_control`** | `service_test.go` | `ConfigControlService` RPC methods, Protobuf response formatting, error translations. |
-| **`src/helpers`** | `config_updates_test.go` | `ApplyUpdates` delta map merging and immutability assertions. |
-| **`src/rest`** | `rest_handler_test.go` | REST routing, CORS preflight headers, OpenMFE loader asset delivery, HTTP method verification. |
-| **`src/server`** | `server_test.go` | Collision-resilient client registration, duplicate connection deduplication, baseline `GetConfig` fallback, telemetry. |
-| **`src/store`** | `store_test.go` | Copy-On-Write (COW) atomicity, failure rollback, concurrent stress reads/writes (20 workers). |
-| **`src/store`** | `persistence_test.go` | Write-to-temp atomic renaming, directory creation, missing file recovery. |
-| **`src/telegram`** | `manager_test.go` | Menu action tree generation, storage operation triggers, mutation callbacks. |
+| **`src/core`** | `request_handler_test.go` | Protobuf unmarshaling, `GET_SYNC`, `FULL_REFRESH`, atomic `PUT_SYNC` & `DELETE_SYNC`, OCC conflict detection, unknown command rejection. |
+| **`src/grpc_control`** | `service_test.go` | `ConfigControlService` RPC methods (`GetConfig`, `SetConfig` with OCC, `DeleteConfig`, `ListConfig`, `ReloadConfig`, `PersistConfig`, `GetStatus`), and `GRPCService` start/stop race lifecycle (`TestGRPCService_StartStopLifecycleRace`). |
+| **`src/helpers`** | `config_updates_test.go` | `ApplyUpdates` delta map merging, `__DELETED__` sentinel removal, and `RedactValue` secret masking (`TestRedactValue`). |
+| **`src/rest`** | `rest_handler_test.go` | REST routing (`/get`, `/set`, `/delete`, `/list`, `/reload`, `/persist`, `/status`, `/contracts`), OCC `409 Conflict`, `400 Bad Request` & `>1MB` body cap, CORS preflight, OpenMFE bundle delivery. |
+| **`src/server`** | `server_test.go` | Collision-resilient client registration, serialized monotonic broadcast ordering (`TestServer_ConcurrentMutationsPreserveStrictBroadcastVersionOrder`), `ReloadConfig` baseline preservation & wildcard `0.0.0.0` filtering, synchronous `PersistConfig` durability. |
+| **`src/store`** | `store_test.go` | Copy-On-Write (COW) atomicity, failure rollback, OCC version checks, concurrent stress reads/writes, and zero-allocation read benchmarks (`BenchmarkStore_Get`, `BenchmarkStore_GetWithVersion`, `BenchmarkStore_UpdateSection`). |
+| **`src/store`** | `persistence_test.go` | Write-to-temp atomic renaming, versioned JSON envelope (`__store_version__`), legacy flat JSON backward compatibility, missing file recovery. |
+| **`src/telegram`** | `manager_test.go` | Deterministic sorted section/key menu action tree generation, secret redaction in menu labels, storage operation triggers, mutation callbacks. |
 
 ## 🛡️ BDD Specification Traceability
 

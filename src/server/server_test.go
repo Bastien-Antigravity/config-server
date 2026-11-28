@@ -17,6 +17,7 @@ package server
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -41,6 +42,8 @@ type mockLogger struct {
 
 func (m *mockLogger) Debug(format string, args ...any)    {}
 func (m *mockLogger) Info(format string, args ...any)     {}
+func (m *mockLogger) Logon(format string, args ...any)    {}
+func (m *mockLogger) Logout(format string, args ...any)   {}
 func (m *mockLogger) Warning(format string, args ...any)  {}
 func (m *mockLogger) Error(format string, args ...any)    {}
 func (m *mockLogger) Critical(format string, args ...any) {}
@@ -204,8 +207,8 @@ func TestServer_ConcurrentOnUpdateAndBroadcast(t *testing.T) {
 func TestServer_SuperseededListenerClosesMailbox(t *testing.T) {
 	srv := createTestServer(t)
 
-	mb1 := newClientMailbox("worker-1", "127.0.0.1:9001", 3)
-	mb2 := newClientMailbox("worker-1", "127.0.0.1:9001", 3)
+	mb1 := newClientMailbox("worker-1", "127.0.0.1:9001", nil, 3)
+	mb2 := newClientMailbox("worker-1", "127.0.0.1:9001", nil, 3)
 
 	srv.addListener("worker-1", mb1)
 	srv.addListener("worker-1", mb2)
@@ -391,7 +394,7 @@ func TestServer_ConcurrentBroadcastAndDisconnectNoPanic(t *testing.T) {
 				case <-ctx.Done():
 					return
 				default:
-					mb := newClientMailbox(name, "127.0.0.1:8080", 3)
+					mb := newClientMailbox(name, "127.0.0.1:8080", nil, 3)
 					srv.addListener(name, mb)
 					srv.removeListener(name, mb)
 				}
@@ -455,9 +458,9 @@ func TestServer_PersistenceRetryAndReloadErrorPropagation(t *testing.T) {
 func TestServer_DeterministicRegistrySorting(t *testing.T) {
 	srv := createTestServer(t)
 
-	mbZ := newClientMailbox("z-service", "10.0.0.3:9000", 16)
-	mbA := newClientMailbox("a-service", "10.0.0.1:9000", 16)
-	mbM := newClientMailbox("m-service", "10.0.0.2:9000", 16)
+	mbZ := newClientMailbox("z-service", "10.0.0.3:9000", nil, 16)
+	mbA := newClientMailbox("a-service", "10.0.0.1:9000", nil, 16)
+	mbM := newClientMailbox("m-service", "10.0.0.2:9000", nil, 16)
 
 	srv.addListener("z-service", mbZ)
 	srv.addListener("a-service", mbA)
@@ -506,5 +509,120 @@ func TestServer_ListConfigSkipsNonScalarCapabilityStructures(t *testing.T) {
 	}
 	if _, hasDashboard := listed["rag_engine"]["dashboard"]; hasDashboard {
 		t.Fatalf("expected non-scalar map 'dashboard' to be excluded from flat ConfigMap, got %q", listed["rag_engine"]["dashboard"])
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_ReloadPreservesBaselineAndFiltersWildcardIP(t *testing.T) {
+	yamlPath := filepath.Join(t.TempDir(), "test.yaml")
+	yamlContent := "common:\n  name: \"config-server\"\n  public_ip: \"127.0.0.1\"\ncapabilities:\n  config_server:\n    ip: \"0.0.0.0\"\n    port: \"3306\"\n  nats:\n    ip: \"127.0.0.1\"\n    port: \"4222\"\n"
+	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CONFIG_PATH", yamlPath)
+
+	logger := &mockLogger{}
+	distCfg := distributed_config.New("standalone")
+	if distCfg.Config == nil || len(distCfg.Config.Capabilities) == 0 {
+		t.Fatalf("expected distributed_config.New(standalone) to load capabilities from %s", yamlPath)
+	}
+	appCfg := &utilconf.AppConfig{Config: distCfg}
+	st := store.NewStore()
+	pm := store.NewPersistenceManager(filepath.Join(t.TempDir(), "store.json"), logger)
+	srv := NewServer(appCfg, logger, st, pm)
+
+	// Persist a dynamic override on disk with version 12.
+	if err := pm.SaveWithVersion(store.ConfigMap{"dynamic": {"k": "v"}}, 12); err != nil {
+		t.Fatalf("SaveWithVersion failed: %v", err)
+	}
+
+	if err := srv.ReloadConfig(context.Background()); err != nil {
+		t.Fatalf("ReloadConfig failed: %v", err)
+	}
+
+	snap := srv.Store.Get()
+	if snap["dynamic"]["k"] != "v" {
+		t.Fatalf("expected dynamic override preserved after reload, got %+v", snap)
+	}
+	if snap["nats"]["port"] != "4222" {
+		t.Fatalf("expected baseline nats capability preserved after reload, got %+v", snap["nats"])
+	}
+	if _, hasWildcard := snap["config_server"]["ip"]; hasWildcard {
+		t.Fatalf("expected wildcard bind IP 0.0.0.0 to be filtered from baseline, got %q", snap["config_server"]["ip"])
+	}
+	if srv.Store.GetVersion() != 12 {
+		t.Fatalf("expected restored version 12 after ReloadConfig, got %d", srv.Store.GetVersion())
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_PersistConfigDurableSave(t *testing.T) {
+	srv := createTestServer(t)
+	ctx := context.Background()
+
+	if err := srv.SetConfig(ctx, "sec", "k", "val"); err != nil {
+		t.Fatalf("SetConfig failed: %v", err)
+	}
+	if err := srv.PersistConfig(ctx); err != nil {
+		t.Fatalf("PersistConfig failed: %v", err)
+	}
+
+	loaded, ver, err := srv.Persistence.LoadWithVersion()
+	if err != nil {
+		t.Fatalf("LoadWithVersion failed: %v", err)
+	}
+	if loaded["sec"]["k"] != "val" || ver == 0 {
+		t.Fatalf("expected durable persisted config with non-zero version, got %+v ver=%d", loaded, ver)
+	}
+
+	// Unwritable directory target must return error synchronously from PersistConfig.
+	badDir := t.TempDir()
+	srv.Persistence = store.NewPersistenceManager(badDir, srv.Logger)
+	if err := srv.PersistConfig(ctx); err == nil {
+		t.Fatal("expected PersistConfig to return synchronous disk error when save fails")
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestServer_ConcurrentMutationsPreserveStrictBroadcastVersionOrder(t *testing.T) {
+	srv := createTestServer(t)
+	ctx := context.Background()
+
+	const totalMutations = 32
+	mb := newClientMailbox("order-verifier", "127.0.0.1:9991", nil, totalMutations+16)
+	srv.addListener("order-verifier", mb)
+
+	var wg sync.WaitGroup
+	for i := 0; i < totalMutations; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_ = srv.SetConfig(ctx, "concurrent", "k", string(rune('A'+(idx%26))))
+		}(i)
+	}
+	wg.Wait()
+
+	close(mb.send)
+	var lastVer int32
+	var syncFrames int
+	for raw := range mb.send {
+		var msg schemas.ConfigMsg
+		if err := proto.Unmarshal(raw, &msg); err != nil {
+			t.Fatalf("failed to unmarshal frame: %v", err)
+		}
+		if msg.Command != schemas.ConfigMsg_BROADCAST_SYNC {
+			continue
+		}
+		syncFrames++
+		if msg.Version <= lastVer {
+			t.Fatalf("out-of-order broadcast frame detected: version %d arrived after %d", msg.Version, lastVer)
+		}
+		lastVer = msg.Version
+	}
+	if syncFrames != totalMutations {
+		t.Fatalf("expected %d ordered BROADCAST_SYNC frames, got %d", totalMutations, syncFrames)
 	}
 }

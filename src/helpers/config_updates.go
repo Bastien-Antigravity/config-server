@@ -15,8 +15,29 @@ package helpers
 // =============================================================================
 
 import (
+	"strings"
+
 	"github.com/Bastien-Antigravity/config-server/src/store"
 )
+
+// -----------------------------------------------------------------------------
+
+// RedactValue masks sensitive configuration values (e.g. ENC(...) tokens,
+// passwords, secrets, API keys) before writing audit or debug logs.
+func RedactValue(key, value string) string {
+	if strings.HasPrefix(value, "ENC(") {
+		return "[REDACTED]"
+	}
+	lowerKey := strings.ToLower(key)
+	if strings.Contains(lowerKey, "password") ||
+		strings.Contains(lowerKey, "secret") ||
+		strings.Contains(lowerKey, "token") ||
+		strings.Contains(lowerKey, "private_key") ||
+		strings.Contains(lowerKey, "api_key") {
+		return "[REDACTED]"
+	}
+	return value
+}
 
 // -----------------------------------------------------------------------------
 

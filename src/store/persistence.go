@@ -17,28 +17,36 @@ package store
 // =============================================================================
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
-	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
+	unilog_interfaces "github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 )
+
+// -----------------------------------------------------------------------------
+
+type persistedEnvelope struct {
+	Version uint64    `json:"__store_version__"`
+	Data    ConfigMap `json:"__store_data__"`
+}
 
 // -----------------------------------------------------------------------------
 
 // PersistenceManager handles saving and loading the configuration from disk.
 type PersistenceManager struct {
 	filePath string
-	Logger   interfaces.Logger
+	Logger   unilog_interfaces.Logger
 	mu       sync.Mutex // Ensures only one save operation happens at a time
 }
 
 // -----------------------------------------------------------------------------
 
 // NewPersistenceManager creates a new manager for the given file path.
-func NewPersistenceManager(path string, logger interfaces.Logger) *PersistenceManager {
+func NewPersistenceManager(path string, logger unilog_interfaces.Logger) *PersistenceManager {
 	return &PersistenceManager{
 		filePath: path,
 		Logger:   logger,
@@ -50,23 +58,46 @@ func NewPersistenceManager(path string, logger interfaces.Logger) *PersistenceMa
 // Load reads the configuration map from disk.
 // If the file does not exist, it returns an empty ConfigMap and no error.
 func (pm *PersistenceManager) Load() (ConfigMap, error) {
+	cfg, _, err := pm.LoadWithVersion()
+	return cfg, err
+}
+
+// -----------------------------------------------------------------------------
+
+// LoadWithVersion reads the configuration map and persisted monotonic version from disk.
+// Backward-compatible with legacy flat ConfigMap JSON files (returns version 0).
+func (pm *PersistenceManager) LoadWithVersion() (ConfigMap, uint64, error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
 	data, err := os.ReadFile(pm.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return make(ConfigMap), nil
+			return make(ConfigMap), 0, nil
 		}
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return nil, 0, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if bytes.Contains(data, []byte(`"__store_data__"`)) {
+		var env persistedEnvelope
+		if err := json.Unmarshal(data, &env); err != nil {
+			return nil, 0, fmt.Errorf("failed to unmarshal config envelope: %w", err)
+		}
+		if env.Data == nil {
+			env.Data = make(ConfigMap)
+		}
+		return env.Data, env.Version, nil
 	}
 
 	var config ConfigMap
 	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		return nil, 0, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	if config == nil {
+		config = make(ConfigMap)
 	}
 
-	return config, nil
+	return config, 0, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -75,6 +106,13 @@ func (pm *PersistenceManager) Load() (ConfigMap, error) {
 // It uses an atomic write pattern (write to temp file, sync, then rename) to
 // prevent file corruption in case of crashes during the write process.
 func (pm *PersistenceManager) Save(config ConfigMap) error {
+	return pm.SaveWithVersion(config, 0)
+}
+
+// -----------------------------------------------------------------------------
+
+// SaveWithVersion writes the given ConfigMap (and optional version > 0) atomically to disk.
+func (pm *PersistenceManager) SaveWithVersion(config ConfigMap, version uint64) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -83,7 +121,15 @@ func (pm *PersistenceManager) Save(config ConfigMap) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(config, "", "  ")
+	var payload any = config
+	if version > 0 {
+		payload = persistedEnvelope{
+			Version: version,
+			Data:    config,
+		}
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}

@@ -12,6 +12,7 @@ service ConfigControlService {
     // Config Management
     rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
     rpc SetConfig(SetConfigRequest) returns (ControlResponse);
+    rpc DeleteConfig(DeleteConfigRequest) returns (ControlResponse);
     rpc ListConfig(ListConfigRequest) returns (ListConfigResponse);
     rpc ReloadConfig(ReloadConfigRequest) returns (ControlResponse);
     rpc PersistConfig(PersistConfigRequest) returns (ControlResponse);
@@ -50,6 +51,12 @@ message SetConfigRequest {
     string section = 1;
     string key = 2;
     string value = 3;
+    uint64 expected_version = 4;
+}
+
+message DeleteConfigRequest {
+    string section = 1;
+    string key = 2;
 }
 
 message ListConfigRequest {
@@ -81,4 +88,5 @@ message GetStatusResponse {
     int64 timestamp = 4;
     int32 active_clients = 5;
     repeated string client_names = 6;
+    uint64 store_version = 7;
 }

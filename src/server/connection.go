@@ -25,7 +25,8 @@ import (
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
 
-	"github.com/Bastien-Antigravity/safe-socket"
+	toolbox_wiretap "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/wiretap"
+	safesocket "github.com/Bastien-Antigravity/safe-socket"
 	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"
 
 	"google.golang.org/protobuf/proto"
@@ -52,17 +53,20 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 	}
 	clientName := fmt.Sprintf("%s-%s", name, endpoint)
 
-	s.Logger.Info("Client identified: %s (advertised: %s)", clientName, rawAddress)
+	s.Logger.Logon("Client session established: %s (advertised: %s)", clientName, rawAddress)
 
 	// Set a reasonable idle timeout to clean up zombie connections.
 	// 10 minutes is a safe balance for configuration synchronization.
 	_ = sock.SetIdleTimeout(10 * time.Minute)
 
-	// Initialize Mailbox (buffered to absorb bursty broadcasts and sync replies)
-	mailbox := newClientMailbox(clientName, rawAddress, 3)
+	// Initialize Mailbox (64-message buffer to absorb bursty broadcasts and sync replies)
+	mailbox := newClientMailbox(clientName, rawAddress, sock, 64)
 
 	s.addListener(clientName, mailbox)
-	defer s.removeListener(clientName, mailbox)
+	defer func() {
+		s.removeListener(clientName, mailbox)
+		s.Logger.Logout("Client session disconnected: %s", clientName)
+	}()
 
 	// 2. Start Writer Loop
 	go func() {
@@ -103,30 +107,38 @@ func (s *Server) handleConnection(sock socket_interfaces.TransportConnection) {
 			return
 		}
 
-		// Handle ConfigMsg
-		s.Logger.Info("Processing request from %s (data len: %d)", clientName, len(data))
-		response, err := core.ProcessRequest(data, s.Store, s.broadcastUpdate, s.TriggerSave)
+		// Handle ConfigMsg (serialize mutation + broadcast under broadcastMu so mailbox versions stay monotonic)
+		start := time.Now()
+		s.Logger.Debug("Processing request from %s (data len: %d)", clientName, len(data))
+		s.broadcastMu.Lock()
+		response, err := core.ProcessRequestWithVersion(data, s.Store, s.broadcastUpdateLocked, s.TriggerSave)
+		s.broadcastMu.Unlock()
 		if err != nil {
 			s.Logger.Error("Error processing request from %s: %v", clientName, err)
+			toolbox_wiretap.RecordEvent(name, "config_server", "SAFESOCKET", "Protobuf", "ConfigMsg", "rpc", "inbound", "ERROR", len(data), float64(time.Since(start).Microseconds())/1000.0, true, false)
 			return
 		}
 
 		if response != nil {
-			s.Logger.Info("Sending response %v to %s", response.Command, clientName)
+			s.Logger.Debug("Sending response %v to %s", response.Command, clientName)
 			bytes, err := proto.Marshal(response)
 			if err != nil {
 				s.Logger.Error("Failed to marshal response: %v", err)
 				return
 			}
 
-			// Hand off the response to the Writer Loop
+			toolbox_wiretap.RecordEvent("config_server", name, "SAFESOCKET", "Protobuf", "ConfigMsg", "rpc", "outbound", response.Command.String(), len(bytes), float64(time.Since(start).Microseconds())/1000.0, false, false)
+
+			// Hand off the response to the Writer Loop with bounded backpressure tolerance
 			select {
 			case <-mailbox.done:
 				return
+			case <-s.shutdown:
+				return
 			case mailbox.send <- bytes:
 				// Response queued
-			default:
-				s.Logger.Warning("Response mailbox full for %s. Dropping client.", clientName)
+			case <-time.After(2 * time.Second):
+				s.Logger.Warning("Response mailbox full for %s after timeout. Dropping client.", clientName)
 				return
 			}
 		}

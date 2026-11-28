@@ -23,7 +23,7 @@ tags:
 - **Client Synchronization & Gap Detection**: Clients fetch initial states via `GET_SYNC` and detect sequence gaps from `ConfigMsg.Version`, triggering automatic `FULL_REFRESH` recovery.
 
 ### 2. Copy-On-Write In-Memory Store
-- **Lock-Free Read Architecture**: Uses `atomic.Pointer[ConfigMap]` with a Copy-On-Write (COW) pattern to provide 100% lock-free, zero-allocation instant read access (`store.Get()`), alongside `atomic.Pointer[map[string]*clientMailbox]` for lock-free broadcasts.
+- **Lock-Free Read Architecture**: Uses `atomic.Pointer[ConfigMap]` with a Copy-On-Write (COW) pattern to provide 100% lock-free, zero-allocation instant read access (`store.Get()`, verified by `BenchmarkStore_Get` and `BenchmarkStore_GetWithVersion` in `src/store/store_test.go`), alongside `atomic.Pointer[map[string]*clientMailbox]` for lock-free listener lookups.
 - **Path-Copying Granular Mutations**: `store.UpdateSection()` clones only the modified section map, structurally sharing all other sections across versions to minimize memory allocations. Monotonic revision counter tracks every state change.
 
 ### 3. Dynamic Service Registry & Auto-Discovery
@@ -31,11 +31,11 @@ tags:
 - **Dynamic Fleet Map**: Dispatches `BROADCAST_REGISTRY` containing all active service addresses (`name=address`) to allow microservices to discover peers without static DNS or proxy overhead.
 - **Collision Resilience**: Automatically disambiguates duplicate service connections from the same host, ensuring multiple replica workers receive independent broadcast streams.
 
-### 4. High-Performance Debounced Persistence
-- **Fault-Tolerant Disk Writes**: In-memory updates acknowledge instantly; a 1-second background worker periodically flushes dirty state to `config_store.json`.
+### 4. High-Performance Persistence
+- **Fault-Tolerant Disk Writes**: In-memory updates acknowledge instantly and persist state + monotonic version via a 1-second background worker, while `PersistConfig` (REST/gRPC/Telegram) commits synchronously via `SaveSync()`.
 - **Write-to-Temp & Rename**: Uses `os.CreateTemp`, explicit `Sync()`, and atomic `os.Rename` to guarantee immunity from partial writes during sudden power loss or process crashes.
 
 ### 5. Multi-Channel Administration
-- **REST & OpenMFE**: Hosts JSON REST API on port `3308` and serves an encapsulated Shadow DOM micro-frontend (`/static/js/mfe-loader.js`).
+- **REST & OpenMFE**: Hosts JSON REST API (`/api/v1/config/get`, `/set`, `/delete`, `/list`, `/reload`, `/persist`, `/status`, `/contracts`) on port `3308` and serves an encapsulated Shadow DOM micro-frontend (`/static/js/mfe-loader.js`).
 - **gRPC Shadow Port**: Exposes `ConfigControlService` on port `3307` for typed RPC control and health checks.
 - **Tele-Remote Integration**: Synchronizes dynamic interactive Telegram menus with `tele-remote` for mobile inspection and tweaking.

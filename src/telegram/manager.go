@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
+	"github.com/Bastien-Antigravity/config-server/src/helpers"
 
 	toolbox_config "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 	toolbox_lifecycle "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/lifecycle"
@@ -48,12 +50,11 @@ func NewMenuManager(tc *toolbox_teleclient.TeleClient, controller core.ConfigCon
 	}
 }
 
-// RebuildMenu dynamically pulls the configuration map and registers it with the TeleClient.
-func (m *MenuManager) RebuildMenu() {
+// BuildActions constructs the deterministic Telegram action hierarchy from the current configuration map.
+func (m *MenuManager) BuildActions() ([]toolbox_teleclient.Action, error) {
 	configMap, err := m.controller.ListConfig(context.Background())
 	if err != nil {
-		m.logger.Error("Telegram Menu: failed to list config: %v", err)
-		return
+		return nil, err
 	}
 
 	var actions []toolbox_teleclient.Action
@@ -77,38 +78,50 @@ func (m *MenuManager) RebuildMenu() {
 		},
 	})
 
-	// 2. Dynamic Config Browser
-	var sections []toolbox_teleclient.Action
-	for section, keys := range configMap {
-		sName := section
-		var keyActions []toolbox_teleclient.Action
+	// 2. Dynamic Config Browser (sorted deterministically for stable inline menu trees)
+	sectionNames := make([]string, 0, len(configMap))
+	for section := range configMap {
+		sectionNames = append(sectionNames, section)
+	}
+	sort.Strings(sectionNames)
 
-		for key, val := range keys {
-			kName := key
-			vVal := val
+	var sections []toolbox_teleclient.Action
+	for _, sName := range sectionNames {
+		keys := configMap[sName]
+		keyNames := make([]string, 0, len(keys))
+		for key := range keys {
+			keyNames = append(keyNames, key)
+		}
+		sort.Strings(keyNames)
+
+		var keyActions []toolbox_teleclient.Action
+		for _, kName := range keyNames {
+			vVal := helpers.RedactValue(kName, keys[kName])
+			secCopy := sName
+			keyCopy := kName
 
 			keyActions = append(keyActions, toolbox_teleclient.Action{
-				Label: fmt.Sprintf("🔑 %s", kName),
+				Label: fmt.Sprintf("🔑 %s", keyCopy),
 				SubMenu: []toolbox_teleclient.Action{
 					{
 						Label:    fmt.Sprintf("Value: %s", vVal),
 						Callback: func(string) error { return nil },
 					},
 					{
-						Label:       fmt.Sprintf("✏️ Edit %s", kName),
-						InputPrompt: fmt.Sprintf("Enter new value for [%s] %s:", sName, kName),
+						Label:       fmt.Sprintf("✏️ Edit %s", keyCopy),
+						InputPrompt: fmt.Sprintf("Enter new value for [%s] %s:", secCopy, keyCopy),
 						Callback: func(input string) error {
 							if input == "" {
 								return nil
 							}
-							m.logger.Info("Telegram update: [%s] %s = %s", sName, kName, input)
-							return m.controller.SetConfig(context.Background(), sName, kName, input)
+							m.logger.Info("Telegram update: [%s] %s = %s", secCopy, keyCopy, helpers.RedactValue(keyCopy, input))
+							return m.controller.SetConfig(context.Background(), secCopy, keyCopy, input)
 						},
 					},
 					{
-						Label: fmt.Sprintf("❌ Delete %s", kName),
+						Label: fmt.Sprintf("❌ Delete %s", keyCopy),
 						Callback: func(string) error {
-							return m.controller.DeleteConfig(context.Background(), sName, kName)
+							return m.controller.DeleteConfig(context.Background(), secCopy, keyCopy)
 						},
 					},
 				},
@@ -125,6 +138,16 @@ func (m *MenuManager) RebuildMenu() {
 		Label:   "🔍 Browse Config",
 		SubMenu: sections,
 	})
+	return actions, nil
+}
+
+// RebuildMenu dynamically pulls the configuration map and registers it with the TeleClient.
+func (m *MenuManager) RebuildMenu() {
+	actions, err := m.BuildActions()
+	if err != nil {
+		m.logger.Error("Telegram Menu: failed to list config: %v", err)
+		return
+	}
 
 	m.tc.UpdateActions(actions)
 	m.tc.PushMenuUpdate()

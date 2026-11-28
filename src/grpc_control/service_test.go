@@ -18,11 +18,16 @@ package grpc_control
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
+	"github.com/Bastien-Antigravity/config-server/src/server"
 	"github.com/Bastien-Antigravity/config-server/src/store"
+
 	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
+
+	"google.golang.org/grpc"
 )
 
 // -----------------------------------------------------------------------------
@@ -70,6 +75,9 @@ func (m *mockConfigController) SetConfig(ctx context.Context, section, key, valu
 }
 
 func (m *mockConfigController) SetConfigWithOCC(ctx context.Context, section, key, value string, expectedVersion uint64) error {
+	if expectedVersion == 999 {
+		return store.ErrVersionMismatch
+	}
 	return m.SetConfig(ctx, section, key, value)
 }
 
@@ -203,6 +211,7 @@ func TestControlServiceImpl_GetStatus(t *testing.T) {
 			Healthy:       true,
 			Status:        "Operational",
 			Version:       "0.0.1",
+			StoreVersion:  7,
 			ActiveClients: 3,
 			ClientNames:   []string{"client1", "client2", "client3"},
 		},
@@ -210,7 +219,69 @@ func TestControlServiceImpl_GetStatus(t *testing.T) {
 	svc := NewControlService(ctrl, &mockLogger{})
 
 	resp, err := svc.GetStatus(context.Background(), &GetStatusRequest{})
-	if err != nil || !resp.Healthy || resp.ActiveClients != 3 {
+	if err != nil || !resp.Healthy || resp.ActiveClients != 3 || resp.StoreVersion != 7 {
 		t.Fatalf("unexpected status response: %+v", resp)
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestControlServiceImpl_DeleteAndOCCConflict(t *testing.T) {
+	ctrl := &mockConfigController{
+		config: store.ConfigMap{
+			"app": {"env": "prod"},
+		},
+	}
+	svc := NewControlService(ctrl, &mockLogger{})
+
+	// 1. OCC conflict returns CONFLICT error code
+	resp, err := svc.SetConfig(context.Background(), &SetConfigRequest{
+		Section:         "app",
+		Key:             "env",
+		Value:           "dev",
+		ExpectedVersion: 999,
+	})
+	if err != nil || resp.Success || resp.ErrorCode != "CONFLICT" {
+		t.Fatalf("expected CONFLICT response, got %+v (err=%v)", resp, err)
+	}
+
+	// 2. DeleteConfig removes key
+	delResp, err := svc.DeleteConfig(context.Background(), &DeleteConfigRequest{
+		Section: "app",
+		Key:     "env",
+	})
+	if err != nil || !delResp.Success {
+		t.Fatalf("expected DeleteConfig success, got %+v (err=%v)", delResp, err)
+	}
+	if _, exists := ctrl.config["app"]["env"]; exists {
+		t.Fatalf("expected key env to be deleted")
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestGRPCService_StartStopLifecycleRace(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to bind ephemeral port: %v", err)
+	}
+	grpcSvc := &GRPCService{
+		server:   grpc.NewServer(),
+		listener: ln,
+		logger:   &mockLogger{},
+		srv:      server.NewServer(nil, &mockLogger{}, store.NewStore(), nil),
+	}
+
+	if err := grpcSvc.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if !grpcSvc.IsRunning() {
+		t.Fatal("expected IsRunning() == true after Start()")
+	}
+	if err := grpcSvc.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+	if grpcSvc.IsRunning() {
+		t.Fatal("expected IsRunning() == false after Stop()")
 	}
 }

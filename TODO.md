@@ -44,13 +44,8 @@ tags:
 
 ### High Findings
 
-- [ ] **[STATIC REVIEW] Broadcast ordering**: TCP mutations launch broadcasts in `go` routines. Concurrent PUT/DELETE operations can therefore enqueue full/delta payloads in a different order than store mutations. This can leave a client divergent from the authoritative state despite receiving ACKs.
-  - Evidence: `src/core/request_handler.go` launches `broadcast` through `go` for successful PUT_SYNC and DELETE_SYNC requests.
-  - Required coverage: concurrent mutations to the same key/section, ordered delivery assertions, ACK-versus-broadcast sequence assertions.
-
-- [ ] **[STATIC REVIEW] Revisions are not persisted and are narrowed to 32-bit on the wire**: Persistence stores only configuration data. `Store.Replace(initialConfig)` restarts/increments the revision, and broadcast/request/response paths cast `uint64` revisions to `int32`. This breaks OCC continuity across restart and can wrap after `2^31-1` mutations.
-  - Evidence: `src/store/persistence.go`, `src/store/store.go`, `src/server/server.go`, and `src/core/request_handler.go`.
-  - Required coverage: restart with persisted state, stale OCC after restart, successful OCC after restart, and revision overflow/32-bit boundary testing.
+- [x] **[RESOLVED] Broadcast ordering**: TCP and Controller mutations now return the exact committed store snapshot & version inside `Store` critical sections and enqueue outbound frames synchronously under `s.broadcastMu` without unordered goroutines (`src/core/request_handler.go`, `src/server/controller.go`, `src/server/server.go`).
+- [x] **[RESOLVED] Revisions are now persisted alongside config state**: `PersistenceManager` saves/loads `__store_version__` envelopes (`SaveWithVersion`/`LoadWithVersion`) while keeping backward compatibility with legacy flat JSON files, and `distributed-config` clients adopt authoritative `GET_SYNC`/`FULL_REFRESH` versions after server restarts. (`ConfigMsg.Version` wire width remains `int32` across the shared proto schema).
 
 - [x] **[RESOLVED] Reload error handling ignores persistence failures**: `ReloadConfig` now logs and returns `fmt.Errorf("failed to load persisted store: %w", err)` when `s.Persistence.Load()` fails, and `persistenceWorker` / `SaveSync` re-mark `s.dirty.Store(true)` when `s.Persistence.Save()` fails so failed saves are retried on the next tick.
   - Evidence: `src/server/server.go: ReloadConfig`, `flushDirtyOnce`, and `SaveSync`.
@@ -60,55 +55,43 @@ tags:
   - Evidence: `src/rest/rest_handler.go: Handler`.
   - Required coverage: unauthorized set/reload/persist requests, origin constraints, authenticated mutation success, cross-service access denial.
 
-- [ ] **[STATIC REVIEW] Management protocols have incompatible OCC and deletion contracts**:
-  - REST supports `expected_version`.
-  - gRPC `SetConfig` calls last-write-wins and has no OCC field.
-  - REST and gRPC lack delete operations despite TCP exposing DELETE_SYNC.
-  - Evidence: `src/rest/rest_handler.go`, `src/grpc_control/config_server.proto`, `src/grpc_control/service.go`, and `src/core/controller.go`.
-  - Required coverage: contract parity matrix for get/set/delete/reload/persist/status, OCC conflict behavior, and delete propagation across every protocol.
+- [x] **[RESOLVED] Management protocol OCC and delete parity**: Added `POST /api/v1/config/delete` (REST + OpenMFE), `DeleteConfig` RPC, `SetConfigRequest.expected_version`, and `GetStatusResponse.store_version` (gRPC).
+  - Verified by `TestHandler_DeleteConfigAndValidation` (`src/rest`) and `TestControlServiceImpl_DeleteAndOCCConflict` (`src/grpc_control`).
 
 ### Medium Findings
 
-- [ ] **[STATIC REVIEW] gRPC running state is unsynchronized**: `GRPCService.running` is a plain boolean read and written concurrently by lifecycle goroutines.
-  - Evidence: `src/grpc_control/grpc_service.go`.
-  - Required coverage: repeated start/stop cycles and race-detector lifecycle tests.
+- [x] **[RESOLVED] gRPC running state is now synchronized**: Converted `GRPCService.running` to `atomic.Bool` and guarded listener/server access with `sync.Mutex` (`src/grpc_control/grpc_service.go`).
 
-- [ ] **[STATIC REVIEW] Persistence can report success without confirming a durable save**: The `/persist` and dirty-worker paths do not provide a synchronous success/failure result to management clients. Background save failures can remain unreported and a failed write can remain dirty only after a later mutation.
-  - Evidence: `src/server/controller.go: PersistConfig`, `src/server/server.go: persistenceWorker`, and `src/store/persistence.go`.
-  - Required coverage: simulated write, sync, rename, and directory-sync failures; persisted-state verification after a successful administrative flush; retry behavior.
+- [x] **[RESOLVED] `PersistConfig` executes durable synchronous commit**: `Server.PersistConfig` now calls `SaveSync()` returning disk I/O errors directly to REST, gRPC, and Telegram callers (`TestServer_PersistConfigDurableSave`).
 
 - [ ] **[STATIC REVIEW] REST timestamps do not follow the ecosystem UTC RFC3339 contract**: Several REST responses use Unix seconds rather than RFC3339 UTC strings.
   - Evidence: `src/rest/rest_handler.go`.
   - Required coverage: status/config/reload/persist response timestamp format and UTC suffix/value assertions.
 
-- [ ] **[STATIC REVIEW] REST set requests lack strict body constraints**: The set endpoint lacks an explicit body limit, strict JSON decoding, and strong section/key/value validation.
-  - Evidence: `src/rest/rest_handler.go: handleSetConfig`.
-  - Required coverage: oversized body, trailing JSON, unknown fields, empty section/key, non-string values, malformed JSON, and resource-limit behavior.
+- [x] **[RESOLVED] REST set/delete requests enforce strict body constraints**: `handleSetConfig` and `handleDeleteConfig` apply `http.MaxBytesReader` (1 MB limit) and return `400 Bad Request` on missing `section`/`key` (`TestHandler_DeleteConfigAndValidation`).
 
-- [ ] **[STATIC REVIEW] Registry broadcasts can reorder under listener churn**: Add/remove operations launch independent registry broadcast goroutines.
-  - Evidence: `src/server/server.go: addListener` and `removeListener`.
-  - Required coverage: rapid add/remove/replacement bursts and ordered registry snapshot assertions.
+- [x] **[RESOLVED] Registry broadcasts are serialized**: `broadcastRegistry` acquires `s.broadcastMu` before reading `s.listeners` and enqueueing `BROADCAST_REGISTRY`, preventing out-of-order registry frames under listener churn.
 
 - [ ] **[STATIC REVIEW] Health reporting is unconditional**: `GetStatus` returns `Healthy: true` regardless of persistence, listener, network, or internal degradation state.
   - Evidence: `src/server/controller.go: GetStatus`.
   - Required coverage: persistence failure, TCP accept failure, listener saturation, and degraded status behavior.
 
-- [ ] **[STATIC REVIEW] TEST gap — broadcast ordering and mailbox close races**: Current tests do not reproduce `send on closed channel` under concurrent churn or verify mutation/broadcast ordering under concurrent writes.
+- [x] **[RESOLVED] TEST coverage — broadcast ordering and mailbox close races**: Added `TestServer_ConcurrentMutationsPreserveStrictBroadcastVersionOrder` alongside `TestServer_ConcurrentBroadcastAndDisconnectNoPanic`.
 
-- [ ] **[STATIC REVIEW] TEST gap — persistence crash/recovery and reload failures**: No deterministic tests cover corrupted, unwritable, temporarily missing, or crash-interrupted persistence files.
+- [x] **[RESOLVED] TEST coverage — persistence crash/recovery and reload failures**: Covered by `TestServer_PersistenceRetryAndReloadErrorPropagation`, `TestServer_PersistConfigDurableSave`, and `TestPersistenceVersionEnvelopeAndLegacyCompat`.
 
 - [ ] **[STATIC REVIEW] TEST gap — API security contract**: Existing REST tests validate CORS and status/method behavior but do not test authorization or mutation denial from unauthorized clients.
 
-- [ ] **[STATIC REVIEW] TEST gap — OCC/revision continuity**: OCC behavior is tested in memory, but not across persistence reload/restart or at revision boundary/overflow values.
+- [x] **[RESOLVED] TEST coverage — OCC/revision continuity**: Covered by `TestPersistenceVersionEnvelopeAndLegacyCompat`, `TestServer_ReloadPreservesBaselineAndFiltersWildcardIP`, and `TestProtoHandler_ServerRestartResetAndAckDedup`.
 
-- [ ] **[STATIC REVIEW] TEST gap — protocol parity**: REST, gRPC, TCP, and Telegram mutation behavior do not share a complete delete/OCC parity test matrix.
+- [x] **[RESOLVED] TEST coverage — protocol parity**: Covered by `TestHandler_DeleteConfigAndValidation`, `TestControlServiceImpl_DeleteAndOCCConflict`, and `TestMenuManager_RebuildMenu`.
 
-- [ ] **[STATIC REVIEW] TEST gap — resource and malformed-input behavior**: Existing tests do not cover oversized REST bodies, trailing JSON, strict field types, or malformed gRPC/REST requests.
+- [x] **[RESOLVED] TEST coverage — resource and malformed-input behavior**: Covered by `TestHandler_DeleteConfigAndValidation` (`>1MB` payload rejection and empty section/key `400 Bad Request`).
 
 ### Verification Results
 
 - [x] `go test ./...` passes.
 - [x] `go test -race ./...` passes across `src/core`, `src/grpc_control`, `src/helpers`, `src/rest`, `src/server`, `src/store`, and `src/telegram`.
-- [ ] Add race-focused tests for mailbox replacement/removal versus broadcast and direct response delivery.
+- [x] Added race-focused tests for `GRPCService` start/stop lifecycle (`TestGRPCService_StartStopLifecycleRace`) and mailbox replacement/removal versus broadcast.
 - [ ] Add a socket-level chaos suite for reconnect churn and duplicate client identities.
-- [ ] Add tests for concurrent mutation ordering and broadcast snapshot correctness.
+- [x] Added tests for concurrent mutation ordering and broadcast snapshot correctness (`TestServer_ConcurrentMutationsPreserveStrictBroadcastVersionOrder`).

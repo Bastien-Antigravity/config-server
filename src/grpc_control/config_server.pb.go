@@ -202,12 +202,13 @@ func (x *GetConfigResponse) GetTimestamp() int64 {
 }
 
 type SetConfigRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Section       string                 `protobuf:"bytes,1,opt,name=section,proto3" json:"section,omitempty"`
-	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
-	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Section         string                 `protobuf:"bytes,1,opt,name=section,proto3" json:"section,omitempty"`
+	Key             string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Value           string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	ExpectedVersion uint64                 `protobuf:"varint,4,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SetConfigRequest) Reset() {
@@ -261,6 +262,65 @@ func (x *SetConfigRequest) GetValue() string {
 	return ""
 }
 
+func (x *SetConfigRequest) GetExpectedVersion() uint64 {
+	if x != nil {
+		return x.ExpectedVersion
+	}
+	return 0
+}
+
+type DeleteConfigRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Section       string                 `protobuf:"bytes,1,opt,name=section,proto3" json:"section,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteConfigRequest) Reset() {
+	*x = DeleteConfigRequest{}
+	mi := &file_config_server_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteConfigRequest) ProtoMessage() {}
+
+func (x *DeleteConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_config_server_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteConfigRequest.ProtoReflect.Descriptor instead.
+func (*DeleteConfigRequest) Descriptor() ([]byte, []int) {
+	return file_config_server_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DeleteConfigRequest) GetSection() string {
+	if x != nil {
+		return x.Section
+	}
+	return ""
+}
+
+func (x *DeleteConfigRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
 type ListConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -269,7 +329,7 @@ type ListConfigRequest struct {
 
 func (x *ListConfigRequest) Reset() {
 	*x = ListConfigRequest{}
-	mi := &file_config_server_proto_msgTypes[4]
+	mi := &file_config_server_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -281,7 +341,7 @@ func (x *ListConfigRequest) String() string {
 func (*ListConfigRequest) ProtoMessage() {}
 
 func (x *ListConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_config_server_proto_msgTypes[4]
+	mi := &file_config_server_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -294,7 +354,7 @@ func (x *ListConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConfigRequest.ProtoReflect.Descriptor instead.
 func (*ListConfigRequest) Descriptor() ([]byte, []int) {
-	return file_config_server_proto_rawDescGZIP(), []int{4}
+	return file_config_server_proto_rawDescGZIP(), []int{5}
 }
 
 type ListConfigResponse struct {
@@ -308,7 +368,7 @@ type ListConfigResponse struct {
 
 func (x *ListConfigResponse) Reset() {
 	*x = ListConfigResponse{}
-	mi := &file_config_server_proto_msgTypes[5]
+	mi := &file_config_server_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -320,7 +380,7 @@ func (x *ListConfigResponse) String() string {
 func (*ListConfigResponse) ProtoMessage() {}
 
 func (x *ListConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_config_server_proto_msgTypes[5]
+	mi := &file_config_server_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -333,7 +393,7 @@ func (x *ListConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConfigResponse.ProtoReflect.Descriptor instead.
 func (*ListConfigResponse) Descriptor() ([]byte, []int) {
-	return file_config_server_proto_rawDescGZIP(), []int{5}
+	return file_config_server_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListConfigResponse) GetSuccess() bool {
@@ -365,7 +425,7 @@ type ReloadConfigRequest struct {
 
 func (x *ReloadConfigRequest) Reset() {
 	*x = ReloadConfigRequest{}
-	mi := &file_config_server_proto_msgTypes[6]
+	mi := &file_config_server_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -377,7 +437,7 @@ func (x *ReloadConfigRequest) String() string {
 func (*ReloadConfigRequest) ProtoMessage() {}
 
 func (x *ReloadConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_config_server_proto_msgTypes[6]
+	mi := &file_config_server_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -390,7 +450,7 @@ func (x *ReloadConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReloadConfigRequest.ProtoReflect.Descriptor instead.
 func (*ReloadConfigRequest) Descriptor() ([]byte, []int) {
-	return file_config_server_proto_rawDescGZIP(), []int{6}
+	return file_config_server_proto_rawDescGZIP(), []int{7}
 }
 
 type PersistConfigRequest struct {
@@ -401,7 +461,7 @@ type PersistConfigRequest struct {
 
 func (x *PersistConfigRequest) Reset() {
 	*x = PersistConfigRequest{}
-	mi := &file_config_server_proto_msgTypes[7]
+	mi := &file_config_server_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -413,7 +473,7 @@ func (x *PersistConfigRequest) String() string {
 func (*PersistConfigRequest) ProtoMessage() {}
 
 func (x *PersistConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_config_server_proto_msgTypes[7]
+	mi := &file_config_server_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -426,7 +486,7 @@ func (x *PersistConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PersistConfigRequest.ProtoReflect.Descriptor instead.
 func (*PersistConfigRequest) Descriptor() ([]byte, []int) {
-	return file_config_server_proto_rawDescGZIP(), []int{7}
+	return file_config_server_proto_rawDescGZIP(), []int{8}
 }
 
 type GetStatusRequest struct {
@@ -437,7 +497,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_config_server_proto_msgTypes[8]
+	mi := &file_config_server_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -449,7 +509,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_config_server_proto_msgTypes[8]
+	mi := &file_config_server_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -462,7 +522,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_config_server_proto_rawDescGZIP(), []int{8}
+	return file_config_server_proto_rawDescGZIP(), []int{9}
 }
 
 type GetStatusResponse struct {
@@ -473,13 +533,14 @@ type GetStatusResponse struct {
 	Timestamp     int64                  `protobuf:"varint,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	ActiveClients int32                  `protobuf:"varint,5,opt,name=active_clients,json=activeClients,proto3" json:"active_clients,omitempty"`
 	ClientNames   []string               `protobuf:"bytes,6,rep,name=client_names,json=clientNames,proto3" json:"client_names,omitempty"`
+	StoreVersion  uint64                 `protobuf:"varint,7,opt,name=store_version,json=storeVersion,proto3" json:"store_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
 	*x = GetStatusResponse{}
-	mi := &file_config_server_proto_msgTypes[9]
+	mi := &file_config_server_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -491,7 +552,7 @@ func (x *GetStatusResponse) String() string {
 func (*GetStatusResponse) ProtoMessage() {}
 
 func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_config_server_proto_msgTypes[9]
+	mi := &file_config_server_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -504,7 +565,7 @@ func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_config_server_proto_rawDescGZIP(), []int{9}
+	return file_config_server_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetStatusResponse) GetHealthy() bool {
@@ -549,6 +610,13 @@ func (x *GetStatusResponse) GetClientNames() []string {
 	return nil
 }
 
+func (x *GetStatusResponse) GetStoreVersion() uint64 {
+	if x != nil {
+		return x.StoreVersion
+	}
+	return 0
+}
+
 var File_config_server_proto protoreflect.FileDescriptor
 
 const file_config_server_proto_rawDesc = "" +
@@ -566,11 +634,15 @@ const file_config_server_proto_rawDesc = "" +
 	"\x11GetConfigResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"T\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\x7f\n" +
 	"\x10SetConfigRequest\x12\x18\n" +
 	"\asection\x18\x01 \x01(\tR\asection\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"\x13\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\x12)\n" +
+	"\x10expected_version\x18\x04 \x01(\x04R\x0fexpectedVersion\"A\n" +
+	"\x13DeleteConfigRequest\x12\x18\n" +
+	"\asection\x18\x01 \x01(\tR\asection\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\"\x13\n" +
 	"\x11ListConfigRequest\"m\n" +
 	"\x12ListConfigResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x1f\n" +
@@ -579,17 +651,19 @@ const file_config_server_proto_rawDesc = "" +
 	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\x15\n" +
 	"\x13ReloadConfigRequest\"\x16\n" +
 	"\x14PersistConfigRequest\"\x12\n" +
-	"\x10GetStatusRequest\"\xc7\x01\n" +
+	"\x10GetStatusRequest\"\xec\x01\n" +
 	"\x11GetStatusResponse\x12\x18\n" +
 	"\ahealthy\x18\x01 \x01(\bR\ahealthy\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1c\n" +
 	"\ttimestamp\x18\x04 \x01(\x03R\ttimestamp\x12%\n" +
 	"\x0eactive_clients\x18\x05 \x01(\x05R\ractiveClients\x12!\n" +
-	"\fclient_names\x18\x06 \x03(\tR\vclientNames2\xf5\x03\n" +
+	"\fclient_names\x18\x06 \x03(\tR\vclientNames\x12#\n" +
+	"\rstore_version\x18\a \x01(\x04R\fstoreVersion2\xc7\x04\n" +
 	"\x14ConfigControlService\x12L\n" +
 	"\tGetConfig\x12\x1e.grpc_control.GetConfigRequest\x1a\x1f.grpc_control.GetConfigResponse\x12J\n" +
-	"\tSetConfig\x12\x1e.grpc_control.SetConfigRequest\x1a\x1d.grpc_control.ControlResponse\x12O\n" +
+	"\tSetConfig\x12\x1e.grpc_control.SetConfigRequest\x1a\x1d.grpc_control.ControlResponse\x12P\n" +
+	"\fDeleteConfig\x12!.grpc_control.DeleteConfigRequest\x1a\x1d.grpc_control.ControlResponse\x12O\n" +
 	"\n" +
 	"ListConfig\x12\x1f.grpc_control.ListConfigRequest\x1a .grpc_control.ListConfigResponse\x12P\n" +
 	"\fReloadConfig\x12!.grpc_control.ReloadConfigRequest\x1a\x1d.grpc_control.ControlResponse\x12R\n" +
@@ -608,37 +682,40 @@ func file_config_server_proto_rawDescGZIP() []byte {
 	return file_config_server_proto_rawDescData
 }
 
-var file_config_server_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_config_server_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_config_server_proto_goTypes = []any{
 	(*ControlResponse)(nil),      // 0: grpc_control.ControlResponse
 	(*GetConfigRequest)(nil),     // 1: grpc_control.GetConfigRequest
 	(*GetConfigResponse)(nil),    // 2: grpc_control.GetConfigResponse
 	(*SetConfigRequest)(nil),     // 3: grpc_control.SetConfigRequest
-	(*ListConfigRequest)(nil),    // 4: grpc_control.ListConfigRequest
-	(*ListConfigResponse)(nil),   // 5: grpc_control.ListConfigResponse
-	(*ReloadConfigRequest)(nil),  // 6: grpc_control.ReloadConfigRequest
-	(*PersistConfigRequest)(nil), // 7: grpc_control.PersistConfigRequest
-	(*GetStatusRequest)(nil),     // 8: grpc_control.GetStatusRequest
-	(*GetStatusResponse)(nil),    // 9: grpc_control.GetStatusResponse
+	(*DeleteConfigRequest)(nil),  // 4: grpc_control.DeleteConfigRequest
+	(*ListConfigRequest)(nil),    // 5: grpc_control.ListConfigRequest
+	(*ListConfigResponse)(nil),   // 6: grpc_control.ListConfigResponse
+	(*ReloadConfigRequest)(nil),  // 7: grpc_control.ReloadConfigRequest
+	(*PersistConfigRequest)(nil), // 8: grpc_control.PersistConfigRequest
+	(*GetStatusRequest)(nil),     // 9: grpc_control.GetStatusRequest
+	(*GetStatusResponse)(nil),    // 10: grpc_control.GetStatusResponse
 }
 var file_config_server_proto_depIdxs = []int32{
-	1, // 0: grpc_control.ConfigControlService.GetConfig:input_type -> grpc_control.GetConfigRequest
-	3, // 1: grpc_control.ConfigControlService.SetConfig:input_type -> grpc_control.SetConfigRequest
-	4, // 2: grpc_control.ConfigControlService.ListConfig:input_type -> grpc_control.ListConfigRequest
-	6, // 3: grpc_control.ConfigControlService.ReloadConfig:input_type -> grpc_control.ReloadConfigRequest
-	7, // 4: grpc_control.ConfigControlService.PersistConfig:input_type -> grpc_control.PersistConfigRequest
-	8, // 5: grpc_control.ConfigControlService.GetStatus:input_type -> grpc_control.GetStatusRequest
-	2, // 6: grpc_control.ConfigControlService.GetConfig:output_type -> grpc_control.GetConfigResponse
-	0, // 7: grpc_control.ConfigControlService.SetConfig:output_type -> grpc_control.ControlResponse
-	5, // 8: grpc_control.ConfigControlService.ListConfig:output_type -> grpc_control.ListConfigResponse
-	0, // 9: grpc_control.ConfigControlService.ReloadConfig:output_type -> grpc_control.ControlResponse
-	0, // 10: grpc_control.ConfigControlService.PersistConfig:output_type -> grpc_control.ControlResponse
-	9, // 11: grpc_control.ConfigControlService.GetStatus:output_type -> grpc_control.GetStatusResponse
-	6, // [6:12] is the sub-list for method output_type
-	0, // [0:6] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1,  // 0: grpc_control.ConfigControlService.GetConfig:input_type -> grpc_control.GetConfigRequest
+	3,  // 1: grpc_control.ConfigControlService.SetConfig:input_type -> grpc_control.SetConfigRequest
+	4,  // 2: grpc_control.ConfigControlService.DeleteConfig:input_type -> grpc_control.DeleteConfigRequest
+	5,  // 3: grpc_control.ConfigControlService.ListConfig:input_type -> grpc_control.ListConfigRequest
+	7,  // 4: grpc_control.ConfigControlService.ReloadConfig:input_type -> grpc_control.ReloadConfigRequest
+	8,  // 5: grpc_control.ConfigControlService.PersistConfig:input_type -> grpc_control.PersistConfigRequest
+	9,  // 6: grpc_control.ConfigControlService.GetStatus:input_type -> grpc_control.GetStatusRequest
+	2,  // 7: grpc_control.ConfigControlService.GetConfig:output_type -> grpc_control.GetConfigResponse
+	0,  // 8: grpc_control.ConfigControlService.SetConfig:output_type -> grpc_control.ControlResponse
+	0,  // 9: grpc_control.ConfigControlService.DeleteConfig:output_type -> grpc_control.ControlResponse
+	6,  // 10: grpc_control.ConfigControlService.ListConfig:output_type -> grpc_control.ListConfigResponse
+	0,  // 11: grpc_control.ConfigControlService.ReloadConfig:output_type -> grpc_control.ControlResponse
+	0,  // 12: grpc_control.ConfigControlService.PersistConfig:output_type -> grpc_control.ControlResponse
+	10, // 13: grpc_control.ConfigControlService.GetStatus:output_type -> grpc_control.GetStatusResponse
+	7,  // [7:14] is the sub-list for method output_type
+	0,  // [0:7] is the sub-list for method input_type
+	0,  // [0:0] is the sub-list for extension type_name
+	0,  // [0:0] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_config_server_proto_init() }
@@ -652,7 +729,7 @@ func file_config_server_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_server_proto_rawDesc), len(file_config_server_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -19,8 +19,8 @@ Config Server is a lightweight, high-performance configuration management servic
 ## Features
 
 - **Dynamic Service Registry & Discovery**: Automatically maps incoming client nodes and their advertised listening addresses (`ServiceAddress`). Deterministically sorted address mappings (`service_addresses`) and active client names (`active_services`) are broadcast across the fleet via `BROADCAST_REGISTRY` to enable dynamic service-to-service routing without static configuration.
-- **Persistent Storage**: Backed by a human-readable JSON file (default: `config_store.json`) with debounced 1-second atomic writes, automatic retry on transient disk failures, and strict error propagation on reload.
-- **Read-Fast Architecture**: Uses `atomic.Pointer[ConfigMap]` with a Copy-On-Write (COW) strategy for 100% lock-free, zero-allocation high-concurrency reads, and `atomic.Pointer[map[string]*clientMailbox]` with lifecycle-safe `done` termination channels for race-free, lock-free broadcasts.
+- **Persistent Storage**: Backed by a human-readable JSON file (default: `config_store.json`) with debounced 1-second atomic writes, versioned envelope tracking (`__store_version__`), synchronous administrative commits (`PersistConfig`), automatic retry on transient disk failures, and strict error propagation on reload.
+- **Read-Fast Architecture**: Uses `atomic.Pointer[ConfigMap]` with a Copy-On-Write (COW) strategy for 100% lock-free, zero-allocation high-concurrency reads (`BenchmarkStore_Get`, `BenchmarkStore_GetWithVersion`, `BenchmarkStore_UpdateSection` in `src/store/store_test.go`), and `atomic.Pointer[map[string]*clientMailbox]` with lifecycle-safe `done` termination channels for race-free broadcasts.
 - **Reliable Transport**: Built on **[safe-socket](https://github.com/Bastien-Antigravity/safe-socket)** for robust, framed TCP communication with handshake (Identity) support.
 - **Generic Protobuf Messaging**: Uses the `ConfigMsg` schema from `distributed-config` for high-performance binary serialization.
 - **Standalone Mode**: Can run with local configuration or integrate into a distributed system.
@@ -66,7 +66,7 @@ The project is structured into three main layers:
 Run the server using the compiled executable. Network capabilities (ports, IPs) are resolved dynamically via `microservice-toolbox` and `distributed-config` (`standalone.yaml -> ../docker-deployment/modes/local/config/native.yaml`):
 
 - **TCP Sync Protocol**: Port `3306` (`appConfig.GetListenAddr("config_server")`) — framed TCP distribution via `safe-socket`
-- **gRPC Shadow Port**: Port `3307` (`appConfig.GetGRPCAddr("config_server")`) — management and remote sync
+- **gRPC Shadow Port**: Port `3307` (`appConfig.GetGRPCListenAddr("config_server")`) — management and remote sync
 - **REST & OpenMFE**: Port `3308` (`appConfig.GetRESTAddr("config_server")`) — HTTP REST endpoints and OpenMFE micro-frontend host
 
 ```bash
@@ -87,8 +87,9 @@ The server communicates using the **Safe-Socket** `tcp-hello` profile:
 
 ### Supported Operations
 
-- **Get Config**: Retrieve the current in-memory configuration (`GET_SYNC`).
-- **Update Config**: Update specific sections/keys. Triggers an async broadcast and debounced persistence (`PUT_SYNC`).
+- **Get Config / Full Refresh**: Retrieve the current in-memory configuration (`GET_SYNC`, `FULL_REFRESH`).
+- **Update Config**: Update specific sections/keys with optional Optimistic Concurrency Control (`PUT_SYNC`, REST `POST /api/v1/config/set`, gRPC `SetConfig`). Triggers a serialized delta broadcast (`BROADCAST_SYNC`) and debounced persistence.
+- **Delete Config**: Remove keys/sections atomically (`DELETE_SYNC`, `__DELETED__` sentinel, REST `POST /api/v1/config/delete`, gRPC `DeleteConfig`, OpenMFE & Telegram delete actions). Triggers an authoritative `FULL_REFRESH` broadcast.
 - **Service Registration**: Triggered seamlessly on socket handshake (`BROADCAST_REGISTRY`).
 
 ## Project Structure

@@ -200,6 +200,7 @@ class ConfigServerMFE extends BaseElementClass {
                             </div>
                         </div>
                         <div class="openmfe-modal-footer">
+                            <button type="button" id="mfe-delete-btn" class="openmfe-btn openmfe-btn--sm openmfe-btn--danger" style="margin-right:auto;">Delete Key</button>
                             <button type="button" class="openmfe-btn openmfe-btn--sm openmfe-btn--outline mfe-close-edit-modal">Cancel</button>
                             <button type="submit" class="openmfe-btn openmfe-btn--sm openmfe-btn--primary">Update Parameter</button>
                         </div>
@@ -230,6 +231,7 @@ class ConfigServerMFE extends BaseElementClass {
             editValue: this.querySelector('#edit-value'),
             editIdentifier: this.querySelector('#edit-identifier'),
             editSecretNotice: this.querySelector('#edit-secret-notice'),
+            btnDeleteEntry: this.querySelector('#mfe-delete-btn'),
             tabsBar: this.querySelector('#config-tabs-bar'),
             panelsHost: this.querySelector('#config-panels-host')
         };
@@ -278,6 +280,13 @@ class ConfigServerMFE extends BaseElementClass {
                 this.dom.editKey?.value,
                 this.dom.editValue?.value
             );
+            this.dom.editModal?.classList.remove('show');
+        });
+
+        this.dom.btnDeleteEntry?.addEventListener('click', () => {
+            const sec = this.dom.editSection?.value;
+            const key = this.dom.editKey?.value;
+            this.deleteConfig(sec, key);
             this.dom.editModal?.classList.remove('show');
         });
     }
@@ -544,6 +553,36 @@ class ConfigServerMFE extends BaseElementClass {
             }
         } catch (err) {
             alert(`Failed to save configuration: ${err.message}`);
+        }
+    }
+
+    async deleteConfig(section, key) {
+        if (!section || !key) return;
+        if (!confirm(`Delete configuration key [${section}] ${key}?`)) return;
+        try {
+            let url = `${this.baseUrl}/api/v1/config/delete`;
+            let res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ section, key })
+            }).catch(() => null);
+
+            if ((!res || !res.ok) && typeof window !== 'undefined' && this.baseUrl !== window.location.origin) {
+                res = await fetch(`${window.location.origin}/api/v1/config/delete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ section, key })
+                }).catch(() => null);
+            }
+
+            if (res && res.ok) {
+                await this.loadAll();
+            } else {
+                const text = res ? await res.text() : 'Network error';
+                alert(`Error deleting configuration: ${text}`);
+            }
+        } catch (err) {
+            alert(`Failed to delete configuration: ${err.message}`);
         }
     }
 

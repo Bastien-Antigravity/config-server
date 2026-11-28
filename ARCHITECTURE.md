@@ -37,7 +37,7 @@ graph TD
     end
     
     Broadcaster -->|Buffered Push| ConnectionHandler
-    Persistence <-->|Debounced 5s Write| Disk[config_store.json]
+    Persistence <-->|Debounced 1s Write| Disk[config_store.json]
 ```
 ### 1. Network Layer (`safe-socket`)
 The server delegates low-level networking to the **[safe-socket](https://github.com/Bastien-Antigravity/safe-socket)** library.
@@ -54,7 +54,7 @@ The server delegates low-level networking to the **[safe-socket](https://github.
 
 ### 2. Server Logic (`src/server`)
 - **Lifecycle**: `Server.Start()` initializes the listener (`atomic.Pointer[factory.Socket]`) and starts the 1-second background `persistenceWorker` (which re-marks state dirty on save failure for automatic retry on the next tick).
-- **Broadcast System**: Uses a lock-free `atomic.Pointer[map[string]*clientMailbox]` listener table and a **Lifecycle-Safe Per-Client Mailbox Pattern** (buffer: 3 messages, paired with a `done chan struct{}` closed via `sync.Once`). `Broadcast()` and `broadcastRegistry()` dereference the immutable listener map directly with zero mutex acquisition, sorting `active_services` and `service_addresses` deterministically via `sort.Strings` and selecting on `<-mailbox.done` so disconnected clients are skipped without ever closing `mailbox.send`. Outgoing writes are handled in dedicated goroutines to prevent slow clients from blocking the server. If a client mailbox transiently overflows, the server sets a `needsRefresh` flag and elevates the next delivery to a complete `FULL_REFRESH` snapshot, gracefully resynchronizing the client without disruptive socket teardowns or peer reconnect storms.
+- **Broadcast System**: Uses a lock-free `atomic.Pointer[map[string]*clientMailbox]` listener table paired with `broadcastMu`-serialized delivery and a **Lifecycle-Safe Per-Client Mailbox Pattern** (buffer: 64 messages, paired with a `done chan struct{}` closed via `sync.Once`). `BroadcastConfig`, `BroadcastFullRefresh`, and `broadcastRegistry()` dereference the immutable listener map, sorting `active_services` and `service_addresses` deterministically via `sort.Strings` and selecting on `<-mailbox.done` so disconnected clients are skipped without ever closing `mailbox.send`. Outgoing writes are handled in dedicated goroutines to prevent slow clients from blocking the server. If a client mailbox transiently overflows, the server sets a `needsRefresh` flag and elevates the next delivery to a complete `FULL_REFRESH` snapshot, gracefully resynchronizing the client without disruptive socket teardowns or peer reconnect storms.
 - **Identity Management**: Uses stable `Service-IP` identification. `addListener` and `removeListener` serialize map Copy-On-Write updates via `writeMu` and use pointer comparison to protect against "ghost disconnections" during rapid service restarts.
 
 ### 3. Core Logic (`src/core`)
@@ -68,7 +68,7 @@ The server delegates low-level networking to the **[safe-socket](https://github.
   - Uses `atomic.Pointer[ConfigMap]` for 100% lock-free reads and `sync.Mutex` (`writeMu`) to serialize Copy-On-Write mutations.
   - **Path-Copying Granular Mutations**: `store.UpdateSection()` clones only the specific section map being modified, structurally sharing all other untouched sections across versions to minimize memory allocations.
   - **Granular ApplyUpdates**: Delta merges clone only sections present in the delta payload, retaining shared pointers for all untouched sections.
-- **Persistence**: Debounced 1-second atomic worker flushes dirty state via `pm.Save()`, while synchronous save (`SaveSync()`) is invoked on graceful shutdown via `toolbox_lifecycle.Manager`.
+- **Persistence**: Debounced 1-second atomic worker flushes dirty state and monotonic revision (`__store_version__`) via `pm.SaveWithVersion()`, while synchronous atomic commit (`SaveSync()`) is used by administrative `PersistConfig` RPCs/REST calls and graceful shutdown via `toolbox_lifecycle.Manager`.
 
 ### 5. Unified Controller Interface (`src/core/controller.go`)
 To prevent package cycles and maintain protocol-agnostic business logic, all management actions are defined inside the `core.ConfigController` interface:
@@ -89,9 +89,9 @@ The management interfaces are designed as pluggable, decoupled adapters dependin
 1. **Client** sends `PUT_SYNC` message with new section/key/value pairs.
 2. **Server** receives payload via `ReadMessage()` and passes it to `core.ProcessRequest`.
 3. **Core** applies updates to a **sandbox copy** of the current configuration.
-4. **Store** commits the new version if the update function succeeds.
-5. **Persistence** marks the state as `dirty`. The background worker performs an atomic write to `config_store.json` on the next ticker cycle (5s).
-6. **Broadcaster** constructs a `BROADCAST_SYNC` message and pushes it into each client's mailbox.
+4. **Store** commits the new version if the update function succeeds (`BenchmarkStore_Get`, `BenchmarkStore_UpdateSection`).
+5. **Persistence** marks the state as `dirty`. The background worker performs an atomic write to `config_store.json` on the next ticker cycle (1s), while explicit `PersistConfig` calls commit synchronously via `SaveSync()`.
+6. **Broadcaster** constructs a version-stamped `BROADCAST_SYNC` delta message (or `FULL_REFRESH` on key deletions) under `broadcastMu` and pushes it into each client's 64-slot mailbox.
 
 ### Client Handshake & Auto-Discovery Flow
 1. **Client** connects using SafeSocket (with `auto-hello`, `tcp-hello`, or `tls-hello`).

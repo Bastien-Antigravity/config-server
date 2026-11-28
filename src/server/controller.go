@@ -19,10 +19,13 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Bastien-Antigravity/config-server/src/core"
+	"github.com/Bastien-Antigravity/config-server/src/helpers"
 	"github.com/Bastien-Antigravity/config-server/src/store"
+
 	toolbox_version "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/version"
 )
 
@@ -60,17 +63,20 @@ func (s *Server) SetConfigWithOCC(ctx context.Context, section, key, value strin
 	if section == "" || key == "" {
 		return fmt.Errorf("section and key must not be empty")
 	}
-	s.Logger.Info("Controller : SetConfig request for [%s] %s = %s (expected_version: %d)", section, key, value, expectedVersion)
+	s.Logger.Info("Controller : SetConfig request for [%s] %s = %s (expected_version: %d)", section, key, helpers.RedactValue(key, value), expectedVersion)
 
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+
+	var committedVer uint64
 	var err error
 	if expectedVersion == 0 {
-		// Hot-path optimization: clone only the modified section
-		err = s.Store.UpdateSection(section, func(sec map[string]string) error {
+		committedVer, err = s.Store.UpdateSectionWithVersion(section, func(sec map[string]string) error {
 			sec[key] = value
 			return nil
 		})
 	} else {
-		err = s.Store.UpdateAtomicWithOCC(expectedVersion, func(sandbox store.ConfigMap) (store.ConfigMap, error) {
+		_, committedVer, err = s.Store.UpdateAtomicWithVersion(expectedVersion, func(sandbox store.ConfigMap) (store.ConfigMap, error) {
 			if _, ok := sandbox[section]; !ok {
 				sandbox[section] = make(map[string]string)
 			}
@@ -83,7 +89,11 @@ func (s *Server) SetConfigWithOCC(ctx context.Context, section, key, value strin
 	}
 
 	s.TriggerSave()
-	s.BroadcastConfig()
+	// Broadcast only the O(1) single-key delta rather than marshaling the full configuration tree
+	delta := store.ConfigMap{
+		section: {key: value},
+	}
+	s.broadcastConfigLocked(delta, committedVer)
 	return nil
 }
 
@@ -96,8 +106,10 @@ func (s *Server) DeleteConfig(ctx context.Context, section, key string) error {
 	}
 	s.Logger.Info("Controller : DeleteConfig request for [%s] %s", section, key)
 
-	// Hot-path optimization: clone only the modified section
-	err := s.Store.UpdateSection(section, func(sec map[string]string) error {
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+
+	committedVer, err := s.Store.UpdateSectionWithVersion(section, func(sec map[string]string) error {
 		delete(sec, key)
 		return nil
 	})
@@ -106,20 +118,25 @@ func (s *Server) DeleteConfig(ctx context.Context, section, key string) error {
 	}
 
 	s.TriggerSave()
-	s.BroadcastFullRefresh()
+	s.broadcastFullRefreshLocked(s.Store.Get(), committedVer)
 	return nil
 }
 
 // -----------------------------------------------------------------------------
 
-// ListConfig returns the full current configuration state, merging static base configurations with dynamic overrides.
-func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
-	s.Logger.Debug("Controller : ListConfig request")
+func isWildcardBindIP(ip string) bool {
+	trimmed := strings.TrimSpace(ip)
+	return trimmed == "0.0.0.0" || trimmed == "::" || trimmed == "[::]"
+}
 
-	// Start with a copy of the dynamic store overrides
-	merged := store.DeepCopy(s.Store.Get())
+// BuildBaselineConfig merges static AppConfig Common and non-wildcard Capabilities
+// underneath any overlay (store snapshot or persisted state).
+func (s *Server) BuildBaselineConfig(overlay store.ConfigMap) store.ConfigMap {
+	merged := store.DeepCopy(overlay)
+	if s.AppConfig == nil {
+		return merged
+	}
 
-	// Helper to set a configuration value only if no override exists
 	setIfEmpty := func(sec map[string]string, k, v string) {
 		if _, exists := sec[k]; !exists && v != "" {
 			sec[k] = v
@@ -142,9 +159,9 @@ func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
 		delete(merged, "common")
 	}
 
-	// 2. Merge capability sections from AppConfig if not overridden
+	// 2. Merge capability sections from AppConfig if not overridden (filtering wildcard bind IPs)
 	for capName, capVal := range s.AppConfig.Capabilities {
-		if capMap, ok := capVal.(map[string]interface{}); ok {
+		if capMap, ok := capVal.(map[string]any); ok {
 			if _, ok := merged[capName]; !ok {
 				merged[capName] = make(map[string]string)
 			}
@@ -152,6 +169,9 @@ func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
 			for k, v := range capMap {
 				switch typed := v.(type) {
 				case string:
+					if k == "ip" && isWildcardBindIP(typed) {
+						continue
+					}
 					setIfEmpty(sec, k, typed)
 				case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
 					setIfEmpty(sec, k, fmt.Sprintf("%v", typed))
@@ -163,16 +183,27 @@ func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
 		}
 	}
 
-	return merged, nil
+	return merged
 }
 
 // -----------------------------------------------------------------------------
 
-// PersistConfig manually triggers a save of the configuration state.
+// ListConfig returns the full current configuration state, merging static base configurations with dynamic overrides.
+func (s *Server) ListConfig(ctx context.Context) (store.ConfigMap, error) {
+	s.Logger.Debug("Controller : ListConfig request")
+	return s.BuildBaselineConfig(s.Store.Get()), nil
+}
+
+// -----------------------------------------------------------------------------
+
+// PersistConfig commits the current store state synchronously to disk, returning any persistence failure.
 func (s *Server) PersistConfig(ctx context.Context) error {
 	s.Logger.Info("Controller : PersistConfig request")
-	s.TriggerSave()
-	return nil
+	if s.Persistence == nil {
+		s.TriggerSave()
+		return nil
+	}
+	return s.SaveSync()
 }
 
 // -----------------------------------------------------------------------------
@@ -184,17 +215,22 @@ func (s *Server) GetStoreVersion(ctx context.Context) uint64 {
 
 // -----------------------------------------------------------------------------
 
-// ServerVersion defines the release version reported in status telemetry.
-// Dynamically resolved from microservice-toolbox (BuildVersion link-time flag or VERSION.txt).
+// ServerVersion defines the fallback release version for minimal unit structs without AppConfig.
 var ServerVersion = toolbox_version.Get()
 
 // GetStatus returns the health status, active client counts, and client names.
 func (s *Server) GetStatus(ctx context.Context) (core.StatusInfo, error) {
 	s.Logger.Debug("Controller : GetStatus request")
+	ver := ServerVersion
+	if s.AppConfig != nil && s.AppConfig.Config != nil {
+		if resolved := s.AppConfig.GetVersion(); resolved != "" {
+			ver = resolved
+		}
+	}
 	return core.StatusInfo{
 		Healthy:       true,
 		Status:        "Operational",
-		Version:       ServerVersion,
+		Version:       ver,
 		StoreVersion:  s.Store.GetVersion(),
 		Timestamp:     time.Now().Unix(),
 		ActiveClients: s.GetActiveClients(),

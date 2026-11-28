@@ -89,3 +89,28 @@ func TestApplyUpdates(t *testing.T) {
 		t.Fatalf("expected keyB to remain valB_updated, got %s", delMerged["section1"]["keyB"])
 	}
 }
+
+// -----------------------------------------------------------------------------
+
+func TestRedactValue(t *testing.T) {
+	cases := []struct {
+		key      string
+		val      string
+		expected string
+	}{
+		{"host", "127.0.0.1", "127.0.0.1"},
+		{"port", "5432", "5432"},
+		{"db_password", "supersecret", "[REDACTED]"},
+		{"jwt_secret", "my-jwt", "[REDACTED]"},
+		{"bot_token", "12345:ABC", "[REDACTED]"},
+		{"openai_api_key", "sk-123", "[REDACTED]"},
+		{"rsa_private_key", "-----BEGIN...", "[REDACTED]"},
+		{"any_key", "ENC(AES256:abcdef)", "[REDACTED]"},
+	}
+
+	for _, tc := range cases {
+		if got := RedactValue(tc.key, tc.val); got != tc.expected {
+			t.Fatalf("RedactValue(%q, %q) = %q, want %q", tc.key, tc.val, got, tc.expected)
+		}
+	}
+}

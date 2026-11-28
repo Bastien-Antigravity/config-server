@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ConfigControlService_GetConfig_FullMethodName     = "/grpc_control.ConfigControlService/GetConfig"
 	ConfigControlService_SetConfig_FullMethodName     = "/grpc_control.ConfigControlService/SetConfig"
+	ConfigControlService_DeleteConfig_FullMethodName  = "/grpc_control.ConfigControlService/DeleteConfig"
 	ConfigControlService_ListConfig_FullMethodName    = "/grpc_control.ConfigControlService/ListConfig"
 	ConfigControlService_ReloadConfig_FullMethodName  = "/grpc_control.ConfigControlService/ReloadConfig"
 	ConfigControlService_PersistConfig_FullMethodName = "/grpc_control.ConfigControlService/PersistConfig"
@@ -34,6 +35,7 @@ type ConfigControlServiceClient interface {
 	// Config Management
 	GetConfig(ctx context.Context, in *GetConfigRequest, opts ...grpc.CallOption) (*GetConfigResponse, error)
 	SetConfig(ctx context.Context, in *SetConfigRequest, opts ...grpc.CallOption) (*ControlResponse, error)
+	DeleteConfig(ctx context.Context, in *DeleteConfigRequest, opts ...grpc.CallOption) (*ControlResponse, error)
 	ListConfig(ctx context.Context, in *ListConfigRequest, opts ...grpc.CallOption) (*ListConfigResponse, error)
 	ReloadConfig(ctx context.Context, in *ReloadConfigRequest, opts ...grpc.CallOption) (*ControlResponse, error)
 	PersistConfig(ctx context.Context, in *PersistConfigRequest, opts ...grpc.CallOption) (*ControlResponse, error)
@@ -63,6 +65,16 @@ func (c *configControlServiceClient) SetConfig(ctx context.Context, in *SetConfi
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ControlResponse)
 	err := c.cc.Invoke(ctx, ConfigControlService_SetConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *configControlServiceClient) DeleteConfig(ctx context.Context, in *DeleteConfigRequest, opts ...grpc.CallOption) (*ControlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ControlResponse)
+	err := c.cc.Invoke(ctx, ConfigControlService_DeleteConfig_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +128,7 @@ type ConfigControlServiceServer interface {
 	// Config Management
 	GetConfig(context.Context, *GetConfigRequest) (*GetConfigResponse, error)
 	SetConfig(context.Context, *SetConfigRequest) (*ControlResponse, error)
+	DeleteConfig(context.Context, *DeleteConfigRequest) (*ControlResponse, error)
 	ListConfig(context.Context, *ListConfigRequest) (*ListConfigResponse, error)
 	ReloadConfig(context.Context, *ReloadConfigRequest) (*ControlResponse, error)
 	PersistConfig(context.Context, *PersistConfigRequest) (*ControlResponse, error)
@@ -136,6 +149,9 @@ func (UnimplementedConfigControlServiceServer) GetConfig(context.Context, *GetCo
 }
 func (UnimplementedConfigControlServiceServer) SetConfig(context.Context, *SetConfigRequest) (*ControlResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetConfig not implemented")
+}
+func (UnimplementedConfigControlServiceServer) DeleteConfig(context.Context, *DeleteConfigRequest) (*ControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteConfig not implemented")
 }
 func (UnimplementedConfigControlServiceServer) ListConfig(context.Context, *ListConfigRequest) (*ListConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListConfig not implemented")
@@ -202,6 +218,24 @@ func _ConfigControlService_SetConfig_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ConfigControlServiceServer).SetConfig(ctx, req.(*SetConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConfigControlService_DeleteConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigControlServiceServer).DeleteConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigControlService_DeleteConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigControlServiceServer).DeleteConfig(ctx, req.(*DeleteConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -292,6 +326,10 @@ var ConfigControlService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetConfig",
 			Handler:    _ConfigControlService_SetConfig_Handler,
+		},
+		{
+			MethodName: "DeleteConfig",
+			Handler:    _ConfigControlService_DeleteConfig_Handler,
 		},
 		{
 			MethodName: "ListConfig",

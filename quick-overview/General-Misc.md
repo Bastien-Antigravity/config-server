@@ -50,15 +50,25 @@ curl -s http://127.0.0.1:3308/api/v1/status | jq
 # Inspect merged configuration
 curl -s http://127.0.0.1:3308/api/v1/config/list | jq
 
-# Trigger manual persistence flush
+# Update a key (with optional expected_version for OCC)
+curl -X POST http://127.0.0.1:3308/api/v1/config/set \
+  -H "Content-Type: application/json" \
+  -d '{"section":"nats","key":"port","value":"4222"}'
+
+# Delete a key
+curl -X POST http://127.0.0.1:3308/api/v1/config/delete \
+  -H "Content-Type: application/json" \
+  -d '{"section":"nats","key":"port"}'
+
+# Trigger synchronous durable persistence flush
 curl -X POST http://127.0.0.1:3308/api/v1/config/persist
 ```
 
 ## 🔍 Troubleshooting & Gotchas
 
-1. **Client Dropped with "Mailbox Full"**:
-   - Cause: The client socket is blocked or experiencing extreme network lag, filling its 3-message buffer.
-   - Resolution: Check client CPU load or network connection. The client will automatically reconnect with backoff.
+1. **Client Mailbox Overflow / Dropped with "Mailbox Full"**:
+   - Cause: The client socket is blocked or experiencing extreme network lag, filling its 64-message buffer.
+   - Resolution: On broadcast bursts, the server flags `needsRefresh` and automatically elevates the next message to a `FULL_REFRESH` snapshot without disconnecting. If a synchronous RPC response times out after 2 seconds on a saturated mailbox, the client reconnects with backoff.
 2. **"Failed to load config persistence" on Startup**:
    - Cause: First run (no `config_store.json` exists) or JSON syntax corruption.
    - Resolution: Normal on first run (initializes empty store). If corrupted, restore from backup or check permissions.

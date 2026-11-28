@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 
@@ -68,19 +67,19 @@ func main() {
 	}
 	pm := store.NewPersistenceManager(storePath, appLogger)
 
-	initialConfig, err := pm.Load()
+	initialConfig, persistedVer, err := pm.LoadWithVersion()
 	if err != nil {
 		appLogger.Warning("Failed to load config persistence: %v", err)
 		initialConfig = make(store.ConfigMap)
 	}
 
 	configStore := store.NewStore()
-	configStore.Replace(initialConfig)
+	configStore.ReplaceWithVersion(initialConfig, persistedVer)
 
 	// 4. Initialize Protocol Server & seed authoritative baseline capabilities into Store
 	srv := server.NewServer(appConfig, appLogger, configStore, pm)
 	if mergedBaseline, listErr := srv.ListConfig(context.Background()); listErr == nil && len(mergedBaseline) > 0 {
-		configStore.Replace(mergedBaseline)
+		configStore.ReplaceWithVersion(mergedBaseline, persistedVer)
 	}
 
 	// 5. Initialize Management Interfaces (gRPC & REST)
@@ -112,16 +111,10 @@ func main() {
 	lm := toolbox_lifecycle.NewManagerWithLogger(appLogger)
 
 	// 6. Register config-server specification with web-interface dynamically (linked to lifecycle)
-	mfeUrl := toolbox_spec.ResolveMFEURL(appConfig, fmt.Sprintf("http://%s/static/js/mfe-loader.js", restAddr))
-	_, tcpPort, _ := net.SplitHostPort(addr)
-	_, restPortStr, _ := net.SplitHostPort(restAddr)
-	grpcAddr, _ := appConfig.GetGRPCListenAddr("config_server")
-	_, grpcPort, _ := net.SplitHostPort(grpcAddr)
-
 	_ = toolbox_spec.PublishWithLifecycle(appConfig, appLogger, lm, "config_server", toolbox_spec.ServiceSpec{
 		Name:        "Config Server",
 		Tag:         "config-server-mfe",
-		URL:         mfeUrl,
+		URL:         fmt.Sprintf("http://%s/static/js/mfe-loader.js", restAddr),
 		NavTitle:    "Config Server",
 		Layer:       "L1",
 		Category:    "Base Fleet",
@@ -129,7 +122,7 @@ func main() {
 		Icon:        "fa-cogs",
 		Description: "Centralized configuration repository and real-time distributor across the Bastien-Antigravity fleet via TCP, REST, and gRPC.",
 		Protocol:    "TCP, REST & gRPC",
-		Framing:     fmt.Sprintf("Port %s TCP / Port %s REST / Port %s gRPC", tcpPort, restPortStr, grpcPort),
+		Framing:     "Port %s TCP / Port %s REST / Port %s gRPC",
 		DocLink:     "obsidian-brain/06-Microservices/Config-Server-Hub.md",
 		Contracts:   rest.BuildExchangeContracts(appConfig, nil),
 	})
@@ -160,7 +153,8 @@ func main() {
 
 	lm.Register("ConfigPersistence", func() error {
 		appLogger.Info("Performing final terminal state save...")
-		return pm.Save(configStore.Get())
+		snap, ver := configStore.GetWithVersion()
+		return pm.SaveWithVersion(snap, ver)
 	})
 
 	lm.Wait(context.Background())

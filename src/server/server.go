@@ -31,6 +31,7 @@ import (
 	schemas "github.com/Bastien-Antigravity/distributed-config/src/schemas"
 	utilconf "github.com/Bastien-Antigravity/microservice-toolbox/go/pkg/config"
 	factory "github.com/Bastien-Antigravity/safe-socket"
+	socket_interfaces "github.com/Bastien-Antigravity/safe-socket/src/interfaces"
 	"github.com/Bastien-Antigravity/universal-logger/src/interfaces"
 
 	"google.golang.org/protobuf/proto"
@@ -42,16 +43,18 @@ import (
 type clientMailbox struct {
 	name           string
 	serviceAddress string
+	sock           socket_interfaces.TransportConnection
 	send           chan []byte
 	done           chan struct{}
 	closeOnce      sync.Once
 	needsRefresh   atomic.Bool
 }
 
-func newClientMailbox(name, serviceAddress string, bufferSize int) *clientMailbox {
+func newClientMailbox(name, serviceAddress string, sock socket_interfaces.TransportConnection, bufferSize int) *clientMailbox {
 	return &clientMailbox{
 		name:           name,
 		serviceAddress: serviceAddress,
+		sock:           sock,
 		send:           make(chan []byte, bufferSize),
 		done:           make(chan struct{}),
 	}
@@ -72,6 +75,9 @@ func (m *clientMailbox) Close() {
 		if m.done != nil {
 			close(m.done)
 		}
+		if m.sock != nil {
+			_ = m.sock.Close()
+		}
 	})
 }
 
@@ -85,6 +91,7 @@ type Server struct {
 	AppConfig     *utilconf.AppConfig // Toolbox Config
 	listeners     atomic.Pointer[map[string]*clientMailbox]
 	listenersLock sync.Mutex
+	broadcastMu   sync.Mutex
 	shutdown      chan struct{}
 	dirty         atomic.Bool
 	onUpdate      atomic.Pointer[func()]
@@ -166,7 +173,7 @@ func (s *Server) Start() error {
 
 // -----------------------------------------------------------------------------
 
-// Stop signals the server to shutdown.
+// Stop signals the server to shutdown and closes active client transports.
 func (s *Server) Stop() {
 	s.Logger.Info("Stopping Config Server...")
 	select {
@@ -178,39 +185,79 @@ func (s *Server) Stop() {
 	if sockPtr := s.serverSock.Load(); sockPtr != nil && *sockPtr != nil {
 		_ = (*sockPtr).Close()
 	}
+
+	s.listenersLock.Lock()
+	ptr := s.listeners.Load()
+	var active []*clientMailbox
+	if ptr != nil {
+		for _, mb := range *ptr {
+			active = append(active, mb)
+		}
+		empty := make(map[string]*clientMailbox)
+		s.listeners.Store(&empty)
+	}
+	s.listenersLock.Unlock()
+
+	for _, mb := range active {
+		mb.Close()
+	}
 }
 
 // -----------------------------------------------------------------------------
 
 // BroadcastConfig sends a delta/merge configuration update to all connected clients.
 func (s *Server) BroadcastConfig() {
-	s.Logger.Info("Broadcasting configuration update to all clients")
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+	snap, ver := s.Store.GetWithVersion()
+	s.broadcastConfigLocked(snap, ver)
+}
+
+func (s *Server) broadcastConfigWithVersion(snap store.ConfigMap, version uint64) {
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+	s.broadcastConfigLocked(snap, version)
+}
+
+func (s *Server) broadcastConfigLocked(snap store.ConfigMap, version uint64) {
+	s.Logger.Info("Broadcasting configuration update to all clients (version: %d)", version)
 	if cbPtr := s.onUpdate.Load(); cbPtr != nil && *cbPtr != nil {
 		go (*cbPtr)()
 	}
-	config := s.Store.Get()
-	payload, err := json.Marshal(config)
+	payload, err := json.Marshal(snap)
 	if err != nil {
 		s.Logger.Error("Failed to marshal config for broadcast: %v", err)
 		return
 	}
-	s.broadcastUpdate(schemas.ConfigMsg_BROADCAST_SYNC, payload)
+	s.broadcastUpdateLocked(schemas.ConfigMsg_BROADCAST_SYNC, payload, version)
 }
 
 // BroadcastFullRefresh sends a full replacement configuration snapshot to all connected clients.
 // Used when keys are deleted or configuration is reloaded from disk so clients purge removed keys.
 func (s *Server) BroadcastFullRefresh() {
-	s.Logger.Info("Broadcasting full configuration refresh to all clients")
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+	snap, ver := s.Store.GetWithVersion()
+	s.broadcastFullRefreshLocked(snap, ver)
+}
+
+func (s *Server) broadcastFullRefreshWithVersion(snap store.ConfigMap, version uint64) {
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+	s.broadcastFullRefreshLocked(snap, version)
+}
+
+func (s *Server) broadcastFullRefreshLocked(snap store.ConfigMap, version uint64) {
+	s.Logger.Info("Broadcasting full configuration refresh to all clients (version: %d)", version)
 	if cbPtr := s.onUpdate.Load(); cbPtr != nil && *cbPtr != nil {
 		go (*cbPtr)()
 	}
-	config := s.Store.Get()
-	payload, err := json.Marshal(config)
+	payload, err := json.Marshal(snap)
 	if err != nil {
 		s.Logger.Error("Failed to marshal config for full refresh: %v", err)
 		return
 	}
-	s.broadcastUpdate(schemas.ConfigMsg_FULL_REFRESH, payload)
+	s.broadcastUpdateLocked(schemas.ConfigMsg_FULL_REFRESH, payload, version)
 }
 
 // GetActiveClients returns the current number of connected clients lock-free.
@@ -237,7 +284,8 @@ func (s *Server) GetClientNames() []string {
 	return names
 }
 
-// ReloadConfig reloads the configuration from the base YAML file and persistence store.
+// ReloadConfig reloads the configuration from the base YAML file and persistence store,
+// re-merging AppConfig baseline capabilities before broadcasting a FULL_REFRESH.
 func (s *Server) ReloadConfig(ctx context.Context) error {
 	s.Logger.Info("Reloading configuration from disk...")
 
@@ -245,19 +293,24 @@ func (s *Server) ReloadConfig(ctx context.Context) error {
 		return fmt.Errorf("failed to reload config: %w", err)
 	}
 
+	var persisted store.ConfigMap
+	var persistedVer uint64
 	if s.Persistence != nil {
-		persisted, err := s.Persistence.Load()
+		loaded, ver, err := s.Persistence.LoadWithVersion()
 		if err != nil {
 			s.Logger.Error("Failed to load persisted store during reload: %v", err)
 			return fmt.Errorf("failed to load persisted store: %w", err)
 		}
-		if persisted != nil {
-			s.Store.Replace(persisted)
-		}
+		persisted = loaded
+		persistedVer = ver
 	}
 
-	s.Logger.Info("Config reloaded successfully")
-	s.BroadcastFullRefresh()
+	merged := s.BuildBaselineConfig(persisted)
+	s.broadcastMu.Lock()
+	ver := s.Store.ReplaceWithVersion(merged, persistedVer)
+	s.Logger.Info("Config reloaded successfully (version: %d)", ver)
+	s.broadcastFullRefreshLocked(merged, ver)
+	s.broadcastMu.Unlock()
 	return nil
 }
 
@@ -314,13 +367,14 @@ func (s *Server) TriggerSave() {
 	s.dirty.Store(true)
 }
 
-// SaveSync immediately commits the current store state to disk synchronously, clearing dirty status.
+// SaveSync immediately commits the current store state and version to disk synchronously, clearing dirty status.
 func (s *Server) SaveSync() error {
 	if s.Persistence == nil {
 		return nil
 	}
 	s.dirty.Store(false)
-	if err := s.Persistence.Save(s.Store.Get()); err != nil {
+	snap, ver := s.Store.GetWithVersion()
+	if err := s.Persistence.SaveWithVersion(snap, ver); err != nil {
 		s.dirty.Store(true)
 		return err
 	}
@@ -333,7 +387,8 @@ func (s *Server) flushDirtyOnce() {
 			return
 		}
 		s.Logger.Info("Background persistence: Saving dirty state...")
-		if err := s.Persistence.Save(s.Store.Get()); err != nil {
+		snap, ver := s.Store.GetWithVersion()
+		if err := s.Persistence.SaveWithVersion(snap, ver); err != nil {
 			s.dirty.Store(true)
 			s.Logger.Error("Background persistence failed: %v", err)
 		}
@@ -360,8 +415,11 @@ func (s *Server) persistenceWorker() {
 
 // -----------------------------------------------------------------------------
 
-// broadcastRegistry sends the list of all connected active clients lock-free.
+// broadcastRegistry builds and broadcasts the active client registry deterministically under s.broadcastMu.
 func (s *Server) broadcastRegistry() {
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+
 	ptr := s.listeners.Load()
 	registry := make(map[string][]string)
 	var clients []string
@@ -388,23 +446,34 @@ func (s *Server) broadcastRegistry() {
 		s.Logger.Error("Failed to marshal registry map: %v", err)
 		return
 	}
-	s.broadcastUpdate(schemas.ConfigMsg_BROADCAST_REGISTRY, payload)
+	s.broadcastUpdateLocked(schemas.ConfigMsg_BROADCAST_REGISTRY, payload, s.Store.GetVersion())
 }
 
 // -----------------------------------------------------------------------------
 
-// broadcastUpdate sends configuration updates to all connected client mailboxes lock-free.
+// broadcastUpdate sends configuration updates using the current store version.
 func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
+	s.broadcastUpdateWithVersion(cmd, payload, s.Store.GetVersion())
+}
+
+// broadcastUpdateWithVersion serializes mailbox enqueueing across concurrent mutators.
+func (s *Server) broadcastUpdateWithVersion(cmd schemas.ConfigMsg_Cmd, payload []byte, version uint64) {
+	s.broadcastMu.Lock()
+	defer s.broadcastMu.Unlock()
+	s.broadcastUpdateLocked(cmd, payload, version)
+}
+
+func (s *Server) broadcastUpdateLocked(cmd schemas.ConfigMsg_Cmd, payload []byte, version uint64) {
 	ptr := s.listeners.Load()
 	if ptr == nil {
 		return
 	}
 
-	version := int32(s.Store.GetVersion())
+	verInt32 := int32(version)
 	msg := &schemas.ConfigMsg{
 		Command: cmd,
 		Payload: payload,
-		Version: version,
+		Version: verInt32,
 	}
 	bytes, err := proto.Marshal(msg)
 	if err != nil {
@@ -419,7 +488,7 @@ func (s *Server) broadcastUpdate(cmd schemas.ConfigMsg_Cmd, payload []byte) {
 			fullMsg := &schemas.ConfigMsg{
 				Command: schemas.ConfigMsg_FULL_REFRESH,
 				Payload: fullPayload,
-				Version: version,
+				Version: verInt32,
 			}
 			fullRefreshBytes, _ = proto.Marshal(fullMsg)
 		}

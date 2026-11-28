@@ -294,3 +294,47 @@ func TestHandler_SetConfig_OCCConflict(t *testing.T) {
 		t.Fatalf("expected error code VERSION_MISMATCH, got %s", resp.ErrorCode)
 	}
 }
+
+// -----------------------------------------------------------------------------
+
+func TestHandler_DeleteConfigAndValidation(t *testing.T) {
+	control := &mockControl{}
+	handler := newTestHandler(t, control)
+
+	// Missing section/key on set returns 400 Bad Request
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/config/set", bytes.NewBufferString(`{"section":"","key":"k","value":"v"}`))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for empty section on set, got %d", rr.Code)
+	}
+
+	// Missing section/key on delete returns 400 Bad Request
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/config/delete", bytes.NewBufferString(`{"section":"app","key":""}`))
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for empty key on delete, got %d", rr.Code)
+	}
+
+	// Valid delete invokes Controller.DeleteConfig
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/config/delete", bytes.NewBufferString(`{"section":"app","key":"mode"}`))
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for delete, got %d", rr.Code)
+	}
+	if len(control.deleteRequests) != 1 || control.deleteRequests[0].section != "app" || control.deleteRequests[0].key != "mode" {
+		t.Fatalf("expected delete request recorded, got %+v", control.deleteRequests)
+	}
+
+	// Oversized request body (>1 MB) is rejected with 400 Bad Request
+	hugeVal := bytes.Repeat([]byte("a"), (1<<20)+1024)
+	hugeBody := bytes.NewBufferString(`{"section":"app","key":"huge","value":"` + string(hugeVal) + `"}`)
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/config/set", hugeBody)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for >1MB body, got %d", rr.Code)
+	}
+}

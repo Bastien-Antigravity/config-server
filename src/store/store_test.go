@@ -273,3 +273,48 @@ func TestStore_UpdateAtomicWithOCC_OwnsCommittedMap(t *testing.T) {
 		t.Fatal("expected external map mutation not to affect store state")
 	}
 }
+
+// -----------------------------------------------------------------------------
+
+func BenchmarkStore_Get(b *testing.B) {
+	s := NewStore()
+	s.Replace(ConfigMap{
+		"timescale_db": {"host": "127.0.0.1", "port": "5432"},
+		"nats":         {"ip": "127.0.0.1", "port": "4222"},
+	})
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = s.Get()["timescale_db"]["port"]
+	}
+}
+
+func BenchmarkStore_GetWithVersion(b *testing.B) {
+	s := NewStore()
+	s.Replace(ConfigMap{
+		"timescale_db": {"host": "127.0.0.1", "port": "5432"},
+	})
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = s.GetWithVersion()
+	}
+}
+
+func BenchmarkStore_UpdateSection(b *testing.B) {
+	s := NewStore()
+	initial := make(ConfigMap, 32)
+	for i := 0; i < 32; i++ {
+		sec := fmt.Sprintf("service_%d", i)
+		initial[sec] = map[string]string{"ip": "127.0.0.1", "port": "8000", "grpc_port": "8001"}
+	}
+	s.Replace(initial)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = s.UpdateSectionWithVersion("service_0", func(sec map[string]string) error {
+			sec["port"] = "9000"
+			return nil
+		})
+	}
+}

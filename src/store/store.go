@@ -97,14 +97,41 @@ func (s *Store) GetSection(section string) map[string]string {
 
 // -----------------------------------------------------------------------------
 
+// GetWithVersion returns the current immutable COW configuration snapshot and
+// its matching monotonic version under a consistent lock with zero allocations.
+// Callers MUST treat the returned map as immutable.
+func (s *Store) GetWithVersion() (ConfigMap, uint64) {
+	s.mu.Lock()
+	snap := s.Get()
+	ver := s.version.Load()
+	s.mu.Unlock()
+	return snap, ver
+}
+
+// -----------------------------------------------------------------------------
+
 // Replace atomically replaces the entire configuration with a new one.
 // Ensures the store "owns" the data by performing a deep copy.
 func (s *Store) Replace(newConfig ConfigMap) {
+	s.ReplaceWithVersion(newConfig)
+}
+
+// -----------------------------------------------------------------------------
+
+// ReplaceWithVersion atomically replaces the entire configuration and returns
+// the resulting monotonic version. If explicitVersion is supplied and higher
+// than the current store version, the version advances to explicitVersion;
+// otherwise it increments by 1.
+func (s *Store) ReplaceWithVersion(newConfig ConfigMap, explicitVersion ...uint64) uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := DeepCopy(newConfig)
 	s.config.Store(&cp)
-	s.version.Add(1)
+	if len(explicitVersion) > 0 && explicitVersion[0] > s.version.Load() {
+		s.version.Store(explicitVersion[0])
+		return explicitVersion[0]
+	}
+	return s.version.Add(1)
 }
 
 // -----------------------------------------------------------------------------
@@ -119,11 +146,21 @@ func (s *Store) UpdateAtomic(modificationFn func(sandbox ConfigMap) (ConfigMap, 
 
 // UpdateAtomicWithOCC applies a modification function only if the current version matches expectedVersion (or expectedVersion == 0).
 func (s *Store) UpdateAtomicWithOCC(expectedVersion uint64, modificationFn func(sandbox ConfigMap) (ConfigMap, error)) error {
+	_, _, err := s.UpdateAtomicWithVersion(expectedVersion, modificationFn)
+	return err
+}
+
+// -----------------------------------------------------------------------------
+
+// UpdateAtomicWithVersion applies a modification function atomically under s.mu
+// (checking expectedVersion when > 0) and returns the committed ConfigMap snapshot
+// and exact new version assigned to that commit.
+func (s *Store) UpdateAtomicWithVersion(expectedVersion uint64, modificationFn func(sandbox ConfigMap) (ConfigMap, error)) (ConfigMap, uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if expectedVersion > 0 && s.version.Load() != expectedVersion {
-		return ErrVersionMismatch
+		return nil, s.version.Load(), ErrVersionMismatch
 	}
 
 	// 1. Create a sandbox for the modification
@@ -132,14 +169,14 @@ func (s *Store) UpdateAtomicWithOCC(expectedVersion uint64, modificationFn func(
 	// 2. Apply updates to the sandbox
 	result, err := modificationFn(sandbox)
 	if err != nil {
-		return err // Atomicity: s.config is unchanged
+		return nil, s.version.Load(), err // Atomicity: s.config is unchanged
 	}
 
 	// 3. Atomically swap the master pointer (deep-copy so store owns the committed state)
 	committed := DeepCopy(result)
 	s.config.Store(&committed)
-	s.version.Add(1)
-	return nil
+	newVer := s.version.Add(1)
+	return committed, newVer, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -147,6 +184,14 @@ func (s *Store) UpdateAtomicWithOCC(expectedVersion uint64, modificationFn func(
 // UpdateSection performs a high-performance granular mutation on a single section,
 // cloning only the target section while structurally sharing all other sections.
 func (s *Store) UpdateSection(section string, updateFn func(sec map[string]string) error) error {
+	_, err := s.UpdateSectionWithVersion(section, updateFn)
+	return err
+}
+
+// -----------------------------------------------------------------------------
+
+// UpdateSectionWithVersion performs UpdateSection and returns the exact committed version.
+func (s *Store) UpdateSectionWithVersion(section string, updateFn func(sec map[string]string) error) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -162,7 +207,7 @@ func (s *Store) UpdateSection(section string, updateFn func(sec map[string]strin
 	}
 
 	if err := updateFn(clonedSec); err != nil {
-		return err
+		return s.version.Load(), err
 	}
 
 	if len(clonedSec) == 0 {
@@ -172,8 +217,8 @@ func (s *Store) UpdateSection(section string, updateFn func(sec map[string]strin
 	}
 
 	s.config.Store(&newMap)
-	s.version.Add(1)
-	return nil
+	newVer := s.version.Add(1)
+	return newVer, nil
 }
 
 // -----------------------------------------------------------------------------
